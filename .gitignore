@@ -55,3 +55,5 @@ cmake-build-*/
 
 # Debug files
 *.dSYM/
+debug
+*debug*

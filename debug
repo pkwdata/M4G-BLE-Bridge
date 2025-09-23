@@ -1,0 +1,247 @@
+Executing action: all (aliases: build)
+Running ninja in directory /mnt/c/Users/me.WHATCHA/Documents/dev/esp32/usbc-to-bluetooth/esp32s3_soft_host/build
+Executing "ninja all"...
+[1/5] Generating binary image from built executable
+esptool.py v4.10.dev2
+Creating esp32s3 image...
+Merged 2 ELF sections
+Successfully created esp32s3 image.
+Generated /mnt/c/Users/me.WHATCHA/Documents/dev/esp32/usbc-to-bluetooth/esp32s3_soft_host/build/esp32s3_soft_host.bin
+[2/5] cd /mnt/c/Users/me.WHATCHA/Documents/dev/esp32/usbc-to-bluetooth/esp32s3_soft_host/build && /home/me/.espressif/python_env/idf6.0_py3.12_env/bin/python /home/me/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app /mnt/c/Users/me.WHATCHA/Documents/dev/esp32/usbc-to-bluetooth/esp32s3_soft_host/build/partition_table/partition-table.bin /mnt/c/Users/me.WHATCHA/Documents/dev/esp32/usbc-to-bluetooth/esp32s3_soft_host/build/esp32s3_soft_host.bin
+esp32s3_soft_host.bin binary size 0x9a370 bytes. Smallest app partition is 0x100000 bytes. 0x65c90 bytes (40%) free.
+[3/5] Performing build step for 'bootloader'
+[1/1] cd /mnt/c/Users/me.WHATCHA/Documents/dev/esp32/usbc-to-bluetooth/esp32s3_soft_host/build/bootloader && /home/me/.espressif/python_env/idf6.0_py3.12_env/bin/python /home/me/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 /mnt/c/Users/me.WHATCHA/Documents/dev/esp32/usbc-to-bluetooth/esp32s3_soft_host/build/bootloader/bootloader.bin
+Bootloader binary size 0x52e0 bytes. 0x2d20 bytes (35%) free.
+[4/5] No install step for 'bootloader'
+[5/5] Completed 'bootloader'
+Executing action: flash
+Running ninja in directory /mnt/c/Users/me.WHATCHA/Documents/dev/esp32/usbc-to-bluetooth/esp32s3_soft_host/build
+Executing "ninja flash"...
+[1/5] cd /mnt/c/Users/me.WHATCHA/Documents/dev/esp32/usbc-to-bluetooth/esp32s3_soft_host/build && /home/me/.espressif/python_env/idf6.0_py3.12_env/bin/python /home/me/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app /mnt/c/Users/me.WHATCHA/Documents/dev/esp32/usbc-to-bluetooth/esp32s3_soft_host/build/partition_table/partition-table.bin /mnt/c/Users/me.WHATCHA/Documents/dev/esp32/usbc-to-bluetooth/esp32s3_soft_host/build/esp32s3_soft_host.bin
+esp32s3_soft_host.bin binary size 0x9a370 bytes. Smallest app partition is 0x100000 bytes. 0x65c90 bytes (40%) free.
+[2/5] Performing build step for 'bootloader'
+[1/1] cd /mnt/c/Users/me.WHATCHA/Documents/dev/esp32/usbc-to-bluetooth/esp32s3_soft_host/build/bootloader && /home/me/.espressif/python_env/idf6.0_py3.12_env/bin/python /home/me/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 /mnt/c/Users/me.WHATCHA/Documents/dev/esp32/usbc-to-bluetooth/esp32s3_soft_host/build/bootloader/bootloader.bin
+Bootloader binary size 0x52e0 bytes. 0x2d20 bytes (35%) free.
+[3/5] No install step for 'bootloader'
+[4/5] Completed 'bootloader'
+[4/5] Running utility command for flash
+esptool.py --chip esp32s3 -p /dev/ttyACM0 -b 460800 --before=default_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 4MB 0x0 bootloader/bootloader.bin 0x8000 partition_table/partition-table.bin 0x10000 esp32s3_soft_host.bin
+esptool.py v4.10.dev2
+Serial port /dev/ttyACM0
+Connecting....
+Chip is ESP32-S3 (QFN56) (revision v0.2)
+Features: WiFi, BLE, Embedded PSRAM 2MB (AP_3v3)
+Crystal is 40MHz
+MAC: 3c:84:27:27:41:18
+Uploading stub...
+Running stub...
+Stub running...
+Changing baud rate to 460800
+Changed.
+Configuring flash size...
+Flash will be erased from 0x00000000 to 0x00005fff...
+Flash will be erased from 0x00008000 to 0x00008fff...
+Flash will be erased from 0x00010000 to 0x000aafff...
+SHA digest in image updated
+Compressed 21216 bytes to 13529...
+Writing at 0x00000000... (100 %)
+Wrote 21216 bytes (13529 compressed) at 0x00000000 in 0.5 seconds (effective 310.0 kbit/s)...
+Hash of data verified.
+Compressed 3072 bytes to 103...
+Writing at 0x00008000... (100 %)
+Wrote 3072 bytes (103 compressed) at 0x00008000 in 0.0 seconds (effective 575.3 kbit/s)...
+Hash of data verified.
+Compressed 631664 bytes to 373765...
+Writing at 0x00010000... (4 %)
+Writing at 0x0001d3a6... (8 %)
+Writing at 0x0002804a... (13 %)
+Writing at 0x00031736... (17 %)
+Writing at 0x000378fd... (21 %)
+Writing at 0x0003dae8... (26 %)
+Writing at 0x00043a44... (30 %)
+Writing at 0x0004a104... (34 %)
+Writing at 0x000503e1... (39 %)
+Writing at 0x00056341... (43 %)
+Writing at 0x0005c0ba... (47 %)
+Writing at 0x00061796... (52 %)
+Writing at 0x000672bd... (56 %)
+Writing at 0x0006d635... (60 %)
+Writing at 0x0007333e... (65 %)
+Writing at 0x0007943a... (69 %)
+Writing at 0x0007f256... (73 %)
+Writing at 0x00084967... (78 %)
+Writing at 0x0008ccd0... (82 %)
+Writing at 0x00092fa6... (86 %)
+Writing at 0x0009946f... (91 %)
+Writing at 0x0009e872... (95 %)
+Writing at 0x000a5060... (100 %)
+Wrote 631664 bytes (373765 compressed) at 0x00010000 in 10.8 seconds (effective 469.7 kbit/s)...
+Hash of data verified.
+
+Leaving...
+Hard resetting via RTS pin...
+Executing action: monitor
+Running idf_monitor in directory /mnt/c/Users/me.WHATCHA/Documents/dev/esp32/usbc-to-bluetooth/esp32s3_soft_host
+Executing "/home/me/.espressif/python_env/idf6.0_py3.12_env/bin/python /home/me/esp/esp-idf/tools/idf_monitor.py -p /dev/ttyACM0 -b 115200 --toolchain-prefix xtensa-esp32s3-elf- --target esp32s3 --revision 0 /mnt/c/Users/me.WHATCHA/Documents/dev/esp32/usbc-to-bluetooth/esp32s3_soft_host/build/esp32s3_soft_host.elf /mnt/c/Users/me.WHATCHA/Documents/dev/esp32/usbc-to-bluetooth/esp32s3_soft_host/build/bootloader/bootloader.elf -m '/home/me/.espressif/python_env/idf6.0_py3.12_env/bin/python' '/home/me/esp/esp-idf/tools/idf.py' '-p' '/dev/ttyACM0'"...
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x1 (POWERON),boot:0x8 (SPI_FAST_FLASH_BOOT)
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x1588
+load:0x403c8700,len:0xd7c
+load:0x403cb700,len:0x2f80
+entry 0x403c8908
+[0;32mI (24) boot: ESP-IDF v6.0-dev-2039-g2044fba6e7 2nd stage bootloader[0m
+[0;32mI (25) boot: compile time Sep 23 2025 08:18:31[0m
+[0;32mI (25) boot: Multicore bootloader[0m
+[0;32mI (27) boot: chip revision: v0.2[0m
+[0;32mI (29) boot: efuse block revision: v1.3[0m
+[0;32mI (33) boot.esp32s3: Boot SPI Speed : 80MHz[0m
+[0;32mI (37) boot.esp32s3: SPI Mode       : DIO[0m
+[0;32mI (40) boot.esp32s3: SPI Flash Size : 4MB[0m
+[0;32mI (44) boot: Enabling RNG early entropy source...[0m
+[0;32mI (49) boot: Partition Table:[0m
+[0;32mI (51) boot: ## Label            Usage          Type ST Offset   Length[0m
+[0;32mI (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000[0m
+[0;32mI (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000[0m
+[0;32mI (71) boot:  2 factory          factory app      00 00 00010000 00100000[0m
+[0;32mI (77) boot: End of partition table[0m
+[0;32mI (81) esp_image: segment 0: paddr=00010020 vaddr=3c070020 size=1c72ch (116524) map[0m
+[0;32mI (109) esp_image: segment 1: paddr=0002c754 vaddr=3fc97d00 size=038c4h ( 14532) load[0m
+[0;32mI (112) esp_image: segment 2: paddr=00030020 vaddr=42000020 size=65b88h (416648) map[0m
+[0;32mI (187) esp_image: segment 3: paddr=00095bb0 vaddr=3fc9b5c4 size=00af8h (  2808) load[0m
+[0;32mI (188) esp_image: segment 4: paddr=000966b0 vaddr=40374000 size=13c6ch ( 81004) load[0m
+[0;32mI (209) esp_image: segment 5: paddr=000aa324 vaddr=50000000 size=00020h (    32) load[0m
+[0;32mI (218) boot: Loaded app from partition at offset 0x10000[0m
+[0;32mI (218) boot: Disabling RNG early entropy source...[0m
+[0;32mI (228) cpu_start: Multicore app[0m
+[0;32mI (237) cpu_start: GPIO 44 and 43 are used as console UART I/O pins[0m
+[0;32mI (238) cpu_start: Pro cpu start user code[0m
+[0;32mI (238) cpu_start: cpu freq: 160000000 Hz[0m
+[0;32mI (239) app_init: Application information:[0m
+[0;32mI (243) app_init: Project name:     esp32s3_soft_host[0m
+[0;32mI (248) app_init: App version:      1[0m
+[0;32mI (251) app_init: Compile time:     Sep 23 2025 08:20:27[0m
+[0;32mI (256) app_init: ELF file SHA256:  b306b4632...[0m
+[0;32mI (260) app_init: ESP-IDF:          v6.0-dev-2039-g2044fba6e7[0m
+[0;32mI (266) efuse_init: Min chip rev:     v0.0[0m
+[0;32mI (270) efuse_init: Max chip rev:     v0.99 [0m
+[0;32mI (274) efuse_init: Chip rev:         v0.2[0m
+[0;32mI (278) heap_init: Initializing. RAM available for dynamic allocation:[0m
+[0;32mI (284) heap_init: At 3FC9EA18 len 0004ACF8 (299 KiB): RAM[0m
+[0;32mI (289) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM[0m
+[0;32mI (294) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM[0m
+[0;32mI (299) heap_init: At 600FE000 len 00001FE8 (7 KiB): RTCRAM[0m
+[0;32mI (306) spi_flash: detected chip: gd[0m
+[0;32mI (308) spi_flash: flash io: dio[0m
+[0;33mW (311) spi_flash: Detected size(8192k) larger than the size in the binary image header(4096k). Using the size in the binary image header.[0m
+[0;32mI (323) sleep_gpio: Configure to isolate all GPIO pins in sleep state[0m
+[0;32mI (330) sleep_gpio: Enable automatic switching of GPIO sleep configuration[0m
+[0;32mI (336) coexist: coex firmware version: b0bcc39[0m
+[0;32mI (355) coexist: coexist rom version e7ae62f[0m
+[0;32mI (356) main_task: Started on CPU0[0m
+[0;32mI (366) main_task: Calling app_main()[0m
+[0;32mI (366) USB_SOFT_HOST: ESP32-S3 USB Soft Host to BLE Bridge Starting...[0m
+[0;32mI (376) USB_SOFT_HOST: Initializing blue LED indicator...[0m
+[0;32mI (376) USB_SOFT_HOST: Initializing BLE...[0m
+[0;32mI (376) BLE_INIT: BT controller compile version [2edb0b0][0m
+[0;32mI (376) BLE_INIT: Using main XTAL as clock source[0m
+[0;32mI (386) BLE_INIT: Feature Config, ADV:1, BLE_50:1, DTM:1, SCAN:1, CCA:0, SMP:1, CONNECT:1[0m
+[0;32mI (396) BLE_INIT: Bluetooth MAC: 3c:84:27:27:41:1a[0m
+[0;32mI (396) phy_init: phy_version 701,f4f1da3a,Mar  3 2025,15:50:10[0m
+[0;32mI (446) USB_SOFT_HOST: NimBLE port initialized successfully[0m
+[0;32mI (446) USB_SOFT_HOST: GAP appearance set to Keyboard (961)[0m
+[0;32mI (446) USB_SOFT_HOST: HID service registered successfully[0m
+[0;32mI (446) USB_SOFT_HOST: BLE Host Task Started[0m
+[0;32mI (456) NimBLE: GAP procedure initiated: stop advertising.[0m
+
+[0;32mI (456) USB_SOFT_HOST: BLE host synchronized[0m
+[0;32mI (456) USB_SOFT_HOST: Starting BLE advertising with name: M4G BLE Bridge[0m
+[0;32mI (466) USB_SOFT_HOST: Advertising fields set successfully[0m
+[0;32mI (476) NimBLE: GAP procedure initiated: advertise; [0m
+[0;32mI (476) NimBLE: disc_mode=2[0m
+[0;32mI (476) NimBLE:  adv_channel_map=0 own_addr_type=0 adv_filter_policy=0 adv_itvl_min=160 adv_itvl_max=240[0m
+[0;32mI (486) NimBLE: [0m
+
+[0;32mI (496) USB_SOFT_HOST: BLE advertising started as 'M4G BLE Bridge' with HID service[0m
+[0;32mI (876) USB_SOFT_HOST: BLE Connected[0m
+[0;32mI (876) USB_SOFT_HOST: BLE connection established, handle: 1[0m
+[0;32mI (876) USB_SOFT_HOST: BLE connection successful - initiating pairing for HID security[0m
+[0;32mI (886) USB_SOFT_HOST: Pairing initiated - Windows should enable notifications after encryption[0m
+[0;32mI (896) NimBLE: ogf=0x08, ocf=0x0022, hci_err=0x21A : BLE_ERR_UNSUPP_REM_FEATURE (Unsupported Remote Feature / Unsupported LMP Feature)[0m
+
+[0;32mI (1726) USB_SOFT_HOST: BLE Connection parameter update request - accepting with conservative params[0m
+[0;32mI (1726) USB_SOFT_HOST: Requested params - interval_min: 6, interval_max: 16, latency: 0, timeout: 960[0m
+[0;32mI (1786) NimBLE: GAP procedure initiated: stop advertising.[0m
+
+[0;32mI (1786) USB_SOFT_HOST: Encryption change event - status: 0[0m
+[0;32mI (1786) USB_SOFT_HOST: Encryption enabled successfully - Windows should now enable HID notifications[0m
+[0;32mI (1786) USB_SOFT_HOST: Connection is now encrypted and ready for HID data[0m
+[0;32mI (1796) USB_SOFT_HOST: Waiting for Windows to enable notifications via CCCD write...[0m
+[0;32mI (1806) USB_SOFT_HOST: 🔵 BLE fully connected, updating LED...[0m
+[0;32mI (2226) USB_SOFT_HOST: BLE Connection parameters updated[0m
+[0;32mI (2396) USB_SOFT_HOST: HID Report read request[0m
+[0;32mI (2496) USB_SOFT_HOST: USB Host task started[0m
+[0;32mI (2496) USB_SOFT_HOST: System initialized - ready for USB to BLE bridging[0m
+[0;32mI (2516) USB_SOFT_HOST: Report Reference descriptor read request[0m
+[0;32mI (2526) USB_SOFT_HOST: USB Host library installed[0m
+[0;32mI (2526) USB_SOFT_HOST: USB Host client registered - ready to detect devices[0m
+[0;32mI (2536) USB_SOFT_HOST: CCCD read request - connection handle: 1[0m
+[0;32mI (2536) USB_SOFT_HOST: CCCD read returning value: 0x0000 (notifications disabled)[0m
+[0;32mI (2596) USB_SOFT_HOST: Protocol Mode read request[0m
+[0;32mI (2646) USB_SOFT_HOST: HID Report Map read request[0m
+[0;32mI (2666) USB_SOFT_HOST: HID Information read request[0m
+[0;32mI (3836) USB_SOFT_HOST: CharaChorder hub device detected - allowing enumeration[0m
+[0;32mI (4306) USB_SOFT_HOST: Unknown device - allowing enumeration with default config[0m
+[0;32mI (4306) USB_SOFT_HOST: New USB device connected (address: 2) - starting enumeration[0m
+[0;32mI (4376) USB_SOFT_HOST: CharaChorder hub device detected - allowing enumeration[0m
+[0;32mI (4406) USB_SOFT_HOST: Enumerating USB device address 2 (claimed devices: 0)[0m
+[0;32mI (4456) USB_SOFT_HOST: USB Device - VID: 0x303A, PID: 0x829A, Class: 0xEF[0m
+[0;32mI (4456) USB_SOFT_HOST: Configuration: 3 interfaces[0m
+[0;32mI (4456) USB_SOFT_HOST: Interface 0: Class=0x03, SubClass=0x00, Protocol=0x00, Number=0[0m
+[0;32mI (4456) USB_SOFT_HOST: Found HID interface 0, subclass: 0x00, protocol: 0x00[0m
+[0;32mI (4466) USB_SOFT_HOST: Found HID device with protocol: 0[0m
+[0;32mI (4476) USB_SOFT_HOST: Successfully claimed HID interface 0 - storing device info[0m
+[0;32mI (4476) USB_SOFT_HOST: Found HID interrupt IN endpoint: 0x83[0m
+[0;32mI (4486) USB_SOFT_HOST: Stored HID device: CharaChorder_2 (addr=2, intf=0, ep=0x83)[0m
+[0;32mI (4496) USB_SOFT_HOST: Total active HID devices: 1[0m
+[0;32mI (4496) USB_SOFT_HOST: Device 2 enumeration complete - HID interface claimed and device stored[0m
+[0;32mI (4506) USB_SOFT_HOST: USB devices enumerated, setting up HID transfers...[0m
+[0;32mI (4506) USB_SOFT_HOST: Setting up HID transfers for 1 devices[0m
+[0;32mI (4516) USB_SOFT_HOST: USB HID ready[0m
+[0;32mI (4516) USB_SOFT_HOST: 🔵 USB fully connected, updating LED...[0m
+[0;32mI (4546) USB_SOFT_HOST: Unknown device - allowing enumeration with default config[0m
+[0;32mI (4556) USB_SOFT_HOST: New USB device connected (address: 4) - starting enumeration[0m
+[0;32mI (4656) USB_SOFT_HOST: Enumerating USB device address 4 (claimed devices: 1)[0m
+[0;32mI (4706) USB_SOFT_HOST: USB Device - VID: 0x303A, PID: 0x829A, Class: 0xEF[0m
+[0;32mI (4706) USB_SOFT_HOST: Configuration: 3 interfaces[0m
+[0;32mI (4706) USB_SOFT_HOST: Interface 0: Class=0x03, SubClass=0x00, Protocol=0x00, Number=0[0m
+[0;32mI (4706) USB_SOFT_HOST: Found HID interface 0, subclass: 0x00, protocol: 0x00[0m
+[0;32mI (4716) USB_SOFT_HOST: Found HID device with protocol: 0[0m
+[1;31mE (4726) HCD DWC: No more HCD channels available[0m
+[1;31mE (4726) USBH: EP Alloc error: ESP_ERR_NOT_SUPPORTED[0m
+[1;31mE (4726) USB HOST: EP allocation error ESP_ERR_NOT_SUPPORTED[0m
+[1;31mE (4736) USB HOST: Claiming interface error: ESP_ERR_NOT_SUPPORTED[0m
+[1;31mE (4746) USB_SOFT_HOST: Failed to claim HID interface 0: ESP_ERR_NOT_SUPPORTED[0m
+[0;32mI (4746) USB_SOFT_HOST: Interface 1: Class=0x02, SubClass=0x02, Protocol=0x00, Number=1[0m
+[0;32mI (4746) USB_SOFT_HOST: BLE Connection parameter update request - accepting with conservative params[0m
+[0;32mI (4766) USB_SOFT_HOST: Requested params - interval_min: 6, interval_max: 12, latency: 0, timeout: 200[0m
+[0;32mI (4766) USB_SOFT_HOST: Interface 2: Class=0x0A, SubClass=0x00, Protocol=0x00, Number=2[0m
+[0;33mW (4786) USB_SOFT_HOST: No HID interfaces successfully claimed for device address 4[0m
+[0;32mI (4926) USB_SOFT_HOST: BLE Connection parameters updated[0m
+[0;33mW (5526) USB_SOFT_HOST: Windows hasn't enabled notifications after 3s - forcing enable for compatibility[0m
+[0;32mI (5526) USB_SOFT_HOST: 🔧 HID notifications force-enabled - will now forward keystrokes[0m
+[0;32mI (27906) NimBLE: GATT procedure initiated: notify; [0m
+[0;32mI (27906) NimBLE: att_handle=34[0m
+
+[0;32mI (28086) NimBLE: GATT procedure initiated: notify; [0m
+[0;32mI (28086) NimBLE: att_handle=34[0m
+
+[0;32mI (30166) NimBLE: GATT procedure initiated: notify; [0m
+[0;32mI (30166) NimBLE: att_handle=34[0m
+
+[0;32mI (30286) NimBLE: GATT procedure initiated: notify; [0m
+[0;32mI (30286) NimBLE: att_handle=34[0m
+
+Done
