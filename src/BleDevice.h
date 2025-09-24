@@ -33,4 +33,7 @@ protected:
     virtual void onConnect(NimBLEServer* pServer) override;
     virtual void onDisconnect(NimBLEServer* pServer) override;
     void onWrite(NimBLECharacteristic* pCharacteristic) override;
+
+    // New: authentication complete callback
+    static int onAuthenticationComplete(uint32_t conn_id, NimBLEConnInfo& connInfo, int result);
 }; 
