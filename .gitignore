@@ -17,6 +17,7 @@
 build/
 debug/
 release/
+managed_components/
 
 # Compiled files
 *.o
@@ -57,3 +58,6 @@ cmake-build-*/
 *.dSYM/
 debug
 *debug*
+
+.defaults
+.old

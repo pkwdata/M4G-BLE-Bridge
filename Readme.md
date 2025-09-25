@@ -111,6 +111,13 @@ USB Keyboard ──USB-A──> ESP32-S3 ──BLE──> Computer/Device
 4. Complete pairing (encryption is automatic)
 5. Type on your USB keyboard - keystrokes should appear on computer
 
+## LED Status meaning
+
+- Red LED - Bluethooth nor USB is connected
+- Yellow LED - Bluetooth is connected but a USB device is not connected
+- Green LED - a USB device is connected but Bluetooth is not
+- Blue LED - Everything is connected and the USB device should be able to type
+
 ## Configuration
 
 ### Key Configuration Files
@@ -318,8 +325,9 @@ For issues and questions:
 
 ## Known issues
 
-- Disconnecting the USB device requires reset of the Bridge device
-- Disconnecting the Bluetooth device does not sucecssfully reconnect, RST Bridge and remove and re-add to OS.
+- SOLVED - Disconnecting the USB device requires reset of the Bridge device
+- SOLVED - Disconnecting the Bluetooth device does not sucecssfully reconnect, RST Bridge and remove and re-add to OS.
 - Mouse Function of the M4G is not working
-- Blue LED is not coming on once everything is connected and working
+- SOLVED - Blue LED is not coming on once everything is connected and working
 - Not getting enough Power for bridge and keyboard with a single USB cable. Currently using USB Cable to power keyboard and a seperate cable for the bridge device. This will eventually replaced with batteries.
+- Chords are causing characters to get stuck.
