@@ -26,14 +26,17 @@ static const char *TAG = "USB_SOFT_HOST";
 // Debug configuration
 static const bool ENABLE_DEBUG_LOGGING = false;
 
-// Blue LED configuration
-#define BLUE_LED_PIN GPIO_NUM_2
+// RGB LED (WS2812) configuration
+#include "led_strip.h"
+#define RGB_LED_GPIO 48
+#define RGB_LED_NUM_LEDS 1
+static led_strip_handle_t rgb_strip = NULL;
 static bool usb_fully_connected = false;
 static bool ble_fully_connected = false;
 
 // Forward declarations
 static void ble_start_advertising(void);
-static void update_connectivity_led(void);
+static void update_rgb_led(void);
 
 // Define MIN macro if not available
 #ifndef MIN
@@ -150,32 +153,54 @@ static int dis_svc_access_cb(uint16_t conn_handle, uint16_t attr_handle, struct 
     return BLE_ATT_ERR_UNLIKELY;
 }
 
-// LED control function
-static void update_connectivity_led(void)
+// RGB LED color update function
+static void update_rgb_led(void)
 {
-    bool should_led_be_on = usb_fully_connected && ble_fully_connected;
-    gpio_set_level(BLUE_LED_PIN, should_led_be_on ? 1 : 0);
-
-    if (ENABLE_DEBUG_LOGGING) {
-        ESP_LOGI(TAG, "LED status: USB=%s BLE=%s LED=%s",
-                 usb_fully_connected ? "connected" : "disconnected",
-                 ble_fully_connected ? "connected" : "disconnected",
-                 should_led_be_on ? "ON" : "OFF");
+    if (!rgb_strip) {
+        ESP_LOGW(TAG, "RGB LED strip not initialized!");
+        return;
     }
+    uint8_t r = 0, g = 0, b = 0;
+    if (usb_fully_connected && ble_fully_connected) {
+        // Blue: USB + BLE
+        r = 0; g = 0; b = 255;
+        ESP_LOGI(TAG, "RGB LED: BLUE (USB+BLE connected)");
+    } else if (usb_fully_connected && !ble_fully_connected) {
+        // Green: USB only
+        r = 0; g = 255; b = 0;
+        ESP_LOGI(TAG, "RGB LED: GREEN (USB only)");
+    } else if (!usb_fully_connected && ble_fully_connected) {
+        // Yellow: BLE only
+        r = 255; g = 255; b = 0;
+        ESP_LOGI(TAG, "RGB LED: YELLOW (BLE only)");
+    } else {
+        // Red: No connection
+        r = 255; g = 0; b = 0;
+        ESP_LOGI(TAG, "RGB LED: RED (no connection)");
+    }
+    rgb_strip->set_pixel(rgb_strip, 0, r, g, b);
+    rgb_strip->refresh(rgb_strip, 100);
 }
 
-// Initialize GPIO for blue LED
-static void init_led(void)
+// Initialize RGB LED
+static void init_rgb_led(void)
 {
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << BLUE_LED_PIN),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
+    ESP_LOGI(TAG, "Initializing RGB LED on GPIO %d...", RGB_LED_GPIO);
+    led_strip_config_t strip_config = {
+        .strip_gpio_num = RGB_LED_GPIO,
+        .max_leds = RGB_LED_NUM_LEDS,
     };
-    gpio_config(&io_conf);
-    gpio_set_level(BLUE_LED_PIN, 0); // Start with LED off
+    led_strip_rmt_config_t rmt_config = {
+        .resolution_hz = 10000000,
+        .rmt_channel = RMT_CHANNEL_0,
+    };
+    esp_err_t led_ret = led_strip_new_rmt_device(&strip_config, &rmt_config, &rgb_strip);
+    if (led_ret != ESP_OK || rgb_strip == NULL) {
+        ESP_LOGE(TAG, "Failed to initialize WS2812 RGB LED strip!");
+    } else {
+        ESP_LOGI(TAG, "WS2812 RGB LED strip initialized on GPIO %d", RGB_LED_GPIO);
+        rgb_strip->clear(rgb_strip, 100);
+    }
 }
 
 // HID service definition
@@ -363,7 +388,7 @@ static void usb_host_client_event_cb(const usb_host_client_event_msg_t *event_ms
 
         // Update USB connection status
         usb_fully_connected = false;
-        update_connectivity_led();
+    update_rgb_led();
 
         ESP_LOGI(TAG, "All HID devices cleared - counters reset");
 
@@ -707,7 +732,7 @@ static void setup_hid_transfers(void)
     if (active_hid_devices > 0) {
         usb_fully_connected = true;
         ESP_LOGI(TAG, "🔵 USB fully connected, updating LED...");
-        update_connectivity_led();
+    update_rgb_led();
     }
 }
 
@@ -834,7 +859,7 @@ static int ble_gap_event_handler(struct ble_gap_event *event, void *arg)
 
         // Update BLE connection status
         ble_fully_connected = false;
-        update_connectivity_led();
+    update_rgb_led();
 
         ESP_LOGI(TAG, "BLE connection closed, clearing state");
 
@@ -883,7 +908,7 @@ static int ble_gap_event_handler(struct ble_gap_event *event, void *arg)
             // Update BLE connection status
             ble_fully_connected = true;
             ESP_LOGI(TAG, "🔵 BLE fully connected, updating LED...");
-            update_connectivity_led();
+            update_rgb_led();
         } else {
             ESP_LOGE(TAG, "Encryption failed with status: %d", event->enc_change.status);
         }
@@ -1203,9 +1228,11 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
-    // Initialize LED
-    ESP_LOGI(TAG, "Initializing blue LED indicator...");
-    init_led();
+    // Initialize RGB LED
+    init_rgb_led();
+    // Set initial LED color and log
+    ESP_LOGI(TAG, "Setting initial RGB LED color (should be RED for no connection)");
+    update_rgb_led();
 
     // Initialize BLE
     ESP_LOGI(TAG, "Initializing BLE...");
