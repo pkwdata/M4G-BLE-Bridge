@@ -1,226 +1,268 @@
-# USB Keyboard And Mouse Bluetooth Adapter (ESP32)
+# ESP32-S3 USB-to-BLE Bridge
 
-![Complete Setup](images/keyboard-and-mouse.jpg)
-
-## Overview
-
-This project transforms an ESP32 into a Bluetooth adapter that enables wireless connectivity for USB keyboards and mice. It acts as a bridge between traditional USB input devices and Bluetooth-enabled devices, effectively converting your wired peripherals into wireless ones.
-
-![Project Hardware](images/image.jpg)
-
-# Hardware Requirements
-
-## 🎯 Quick Setup Guide
-
-```
-📱 ESP32-S3-USB-OTG     →  Ready to use!
-        OR
-🔧 Other ESP32 Board    →  Need USB Host Module
-```
-
-## 🚨 Important Requirements
-Your ESP32 must have USB Host support. Choose your setup:
-
-### Option 1: Recommended ⭐
-```
-┌──────────────────────┐
-│  ESP32-S3-USB-OTG   │
-│  ✅ Built-in USB    │
-│  ⚡ Full Speed      │
-│  📊 12 Mbps        │
-└──────────────────────┘
-```
-
-### Option 2: Alternative 🔄
-```
-┌──────────────────────┐
-│    Other ESP32       │──➤  USB Host Module
-│  🔌 External USB    │         Required
-│  ⚠️ Check Support   │
-└──────────────────────┘
-```
-
-## 💡 Hardware Understanding
-- 🎮 **Built-in Support**: ESP32-S3-USB-OTG has native USB host capabilities
-- 🔌 **Module Option**: Other ESP32s need external USB host module
-- ⚡ **Speed**: Full-speed USB (12 Mbps)
-- 📚 **Documentation**: [Official ESP32-S3-USB-OTG Guide](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s3/esp32-s3-usb-otg/user_guide.html)
+A wireless bridge that converts USB keyboards to Bluetooth HID devices using ESP32-S3. Originally designed for the CharaChorder MasterForge keyboard, this project enables any USB keyboard to work wirelessly via Bluetooth Low Energy (BLE).
 
 ## Features
 
-- Supports both USB keyboards and mice simultaneously
-- Bluetooth Low Energy (BLE) connectivity
-- Plug-and-play functionality
-- Low latency input processing
-- Compatible with multiple operating systems (Windows, macOS, Linux, iOS, Android)
-- Battery-powered operation possible (with appropriate power supply)
+- **USB Host Support**: Full USB host functionality with hub support for complex keyboards
+- **BLE HID Profile**: Complete BLE HID Over GATT Profile (HOGP) implementation
+- **Windows Compatibility**: Optimized for Windows 10/11 with proper encryption and notification handling
+- **Real-time Processing**: Low-latency keystroke forwarding with 15-byte to 8-byte HID report conversion
+- **Auto-reconnection**: Automatic USB device detection and BLE advertising restart
+- **CharaChorder Optimized**: Specifically tuned for CharaChorder's dual ESP32-S3 internal architecture
 
 ## Hardware Requirements
 
-### Essential Components
+### Primary Hardware
+- **ESP32-S3 Development Board** (tested with ESP32-S3-DevKitC-1)
+  - USB-OTG support required
+  - Minimum 4MB flash recommended
+- **USB-A Female Connector** (for keyboard connection)
+- **Power Supply** (5V via USB-C or external power)
 
-- ESP32-WROOM-32 development board
-- USB keyboard (USB HID compliant)
-- USB mouse (USB HID compliant)
-- Female USB-A ports or breakout boards (for connecting peripherals)
-- Jumper wires
-- Breadboard (for prototyping)
-- 5V power supply
-
-### Optional Components
-
-- 3D printed case (design files available)
-- LiPo battery (for portable use)
-- Battery charging module
+### Supported Keyboards
+- **CharaChorder MasterForge** (primary target)
+- Any USB HID keyboard with standard 8-byte reports
+- USB hub-based keyboards (dual-half keyboards)
 
 ## Software Requirements
 
-### Development Environment
+### ESP-IDF Setup
+This project requires ESP-IDF v6.0 or later.
 
-- Arduino IDE (2.0 or later recommended)
-- ESP32 board support package
-- Required Libraries:
-  - ESP32-BLE-Keyboard
-  - ESP32-BLE-Mouse
-  - ESP32-USB-Soft-Host
+#### Install ESP-IDF
+```bash
+# Clone ESP-IDF
+git clone -b v6.0 --recursive https://github.com/espressif/esp-idf.git
 
-### Dependencies Installation
+# Install ESP-IDF
+cd esp-idf
+./install.sh
 
-1. Add ESP32 board manager URL in Arduino IDE preferences:
-   ```
-   https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
-   ```
-2. Install ESP32 board package via Board Manager
-3. Install required libraries through Library Manager
+# Set up environment (add to .bashrc for persistence)
+. ./export.sh
+```
 
-## Pin Configuration
+#### Verify Installation
+```bash
+idf.py --version
+# Should show: ESP-IDF v6.0.x
+```
 
-### USB Port 1 (Keyboard)
+## Build and Flash Instructions
 
-- D+ (Data+): GPIO 16 (RX2)
-- D- (Data-): GPIO 17 (TX2)
-- VCC: 5V (VIN or 5V pin)
-- GND: Ground (Any GND pin)
+### 1. Clone and Configure
+```bash
+# Clone this repository
+git clone [repository-url]
+cd esp32s3_soft_host
 
-### USB Port 2 (Mouse)
+# Configure project for your ESP32-S3
+idf.py set-target esp32s3
+```
 
-- D+ (Data+): GPIO 22 (GPIO22)
-- D- (Data-): GPIO 23 (GPIO23)
-- VCC: 5V (VIN or 5V pin)
-- GND: Ground (Any GND pin)
+### 2. Build
+```bash
+idf.py build
+```
 
-### ESP32 Board Pin Reference
+### 3. Flash
+```bash
+# Replace /dev/ttyACM0 with your ESP32-S3 port
+idf.py -p /dev/ttyACM0 flash
+```
 
-| Function    | GPIO Pin | Board Label | Notes                  |
-| ----------- | -------- | ----------- | ---------------------- |
-| Keyboard D+ | GPIO 16  | RX2         | Also labeled as U2RXD  |
-| Keyboard D- | GPIO 17  | TX2         | Also labeled as U2TXD  |
-| Mouse D+    | GPIO 22  | GPIO22      | General purpose IO pin |
-| Mouse D-    | GPIO 23  | GPIO23      | General purpose IO pin |
+### 4. Monitor
+```bash
+idf.py -p /dev/ttyACM0 monitor
+# Press Ctrl+] to exit monitor
+```
 
-**Note:** The pins used for USB communication (GPIO 16, 17, 22, 23) are multiplexed pins that can serve different functions on the ESP32. In this project, we're using them for USB communication, so they won't be available for their alternative functions while the adapter is operating.
+## Connection Setup
 
-## Setup Instructions
+### Hardware Connections
+```
+USB Keyboard ──USB-A──> ESP32-S3 ──BLE──> Computer/Device
+```
 
-1. **Hardware Assembly**
+1. **Connect Keyboard**: Plug USB keyboard into ESP32-S3 USB-A port
+2. **Power ESP32-S3**: Connect via USB-C or external 5V supply
+3. **Pair with Computer**: Look for "M4G BLE Bridge" in Bluetooth settings
 
-   - Connect USB ports according to the pin configuration
-   - Ensure proper power supply connection
-   - Double-check all connections before powering on
+### Pairing Process
+1. Flash firmware and power on ESP32-S3
+2. On your computer, open Bluetooth settings
+3. Look for "M4G BLE Bridge" and select it
+4. Complete pairing (encryption is automatic)
+5. Type on your USB keyboard - keystrokes should appear on computer
 
-2. **Software Installation**
+## Configuration
 
-   - Follow the Development Setup instructions below
-   - Flash the firmware to ESP32
-   - Monitor serial output for debugging
+### Key Configuration Files
 
-3. **Pairing Process**
-   - Power on the adapter
-   - Search for Bluetooth devices on your target device
-   - Connect to "ESP32 Keyboard" and "ESP32 Mouse"
-   - Test input devices
+#### `sdkconfig.defaults`
+Contains all ESP32-S3 and Bluetooth optimizations:
+- USB Host configuration with hub support
+- NimBLE stack configuration for Windows compatibility
+- Memory and performance optimizations
 
-## Development Setup with VSCode
+#### `main/main.c`
+Core application with configurable parameters:
+```c
+// BLE device name
+#define DEVICE_NAME "M4G BLE Bridge"
 
-1. Install [Visual Studio Code](https://code.visualstudio.com/)
-2. Clone this repository
-3. Open the `ESP32-USB-TO-BLE.code-workspace` file in VSCode
-4. Install recommended extensions:
-   - PlatformIO IDE
-   - C/C++ Extension Pack
-   - CMake Tools
-   - Git Graph
-   - GitLens
-   - Serial Monitor
-5. Click "Install All" when prompted
-6. Wait for PlatformIO to download dependencies
-7. Use PlatformIO toolbar for:
-   - Building (✓)
-   - Uploading (→)
-   - Serial monitoring (🔌)
+// USB enumeration settings
+#define CHARACHORDER_VID 0x1A40
+#define CHARACHORDER_PID 0x0101
+```
+
+### Customization
+- **Device Name**: Change `DEVICE_NAME` in main.c
+- **USB Vendor/Product IDs**: Modify VID/PID constants for different keyboards
+- **BLE Parameters**: Adjust advertising intervals and connection parameters
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Device Not Connecting**
+#### 1. USB Device Not Detected
+```
+Check: USB cable connections
+Check: ESP32-S3 power supply (ensure 5V)
+Check: USB host configuration in sdkconfig.defaults
+```
 
-   - Ensure ESP32 is powered properly
-   - Check if device is in pairing mode
-   - Verify USB connections
+#### 2. BLE Connection Fails
+```
+Check: Device appears as "M4G BLE Bridge" in Bluetooth scan
+Check: Clear Bluetooth cache on Windows
+Check: Verify BLE compatibility mode in sdkconfig.defaults
+```
 
-2. **Input Lag**
+#### 3. No Keystrokes Forwarded
+```
+Check: Monitor output shows "HID report from CharaChorder"
+Check: BLE encryption completed ("Encryption enabled successfully")
+Check: Notifications enabled ("force-enabled" after 3 seconds)
+```
 
-   - Reduce distance from adapter
-   - Check for interference sources
-   - Verify power supply stability
+#### 4. Compilation Errors
+```bash
+# Clean and rebuild
+idf.py fullclean
+idf.py build
+```
 
-3. **Device Not Recognized**
-   - Confirm USB device compatibility
-   - Check physical connections
-   - Verify serial monitor output
+### Debug Monitoring
+Enable detailed logging by monitoring serial output:
+```bash
+idf.py monitor
+```
 
-For additional issues, please open a GitHub issue with:
+Look for these key indicators:
+- USB enumeration: "CharaChorder hub device detected"
+- BLE connection: "BLE connection established"
+- Keystroke forwarding: "HID report from CharaChorder"
 
-- Detailed problem description
-- Hardware configuration
-- Serial monitor output
-- Steps to reproduce
+## Architecture
+
+### System Overview
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   USB Keyboard  │────│   ESP32-S3 Host  │────│  BLE Client     │
+│                 │    │                  │    │  (Computer)     │
+│ - CharaChorder  │    │ - USB Host Stack │    │ - Windows/Mac   │
+│ - Standard HID  │    │ - NimBLE Stack   │    │ - Linux/Mobile  │
+│ - Hub Support   │    │ - HID Conversion │    │ - Gaming Console│
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+```
+
+### Data Flow
+1. **USB Capture**: USB Host library captures HID reports from keyboard
+2. **Format Conversion**: 15-byte CharaChorder reports → 8-byte standard HID
+3. **BLE Transmission**: NimBLE stack sends reports via GATT notifications
+4. **Client Processing**: Computer receives and processes as keyboard input
+
+## Future Development
+
+### Planned Features
+
+#### Hardware Enhancements
+- [ ] **Qt Pi Format Adaptation**: Design compact Qt Pi-compatible PCB form factor
+- [ ] **nRF52840 Integration**: Add nRF52840 for enhanced BLE performance and power efficiency
+- [ ] **Battery Power System**: Integrate LiPo battery with charging circuit and power management
+- [ ] **Power Control**: Add sleep modes and power optimization for battery operation
+
+#### Software Features
+- [ ] **Universal Keyboard Support**: Expand compatibility to all USB HID keyboards
+- [ ] **Multi-device Pairing**: Support connection to multiple devices simultaneously
+- [ ] **Wireless Keyboard Halves**: Enable wireless communication between split keyboard halves
+- [ ] **Advanced HID Features**: Support for media keys, macros, and programmable functions
+
+#### Connectivity Improvements
+- [ ] **2.4GHz Wireless**: Add dedicated wireless protocol for ultra-low latency
+- [ ] **USB-C Hub Support**: Expand to support USB-C keyboards and devices
+- [ ] **Hot-swap Support**: Dynamic keyboard detection and switching
+- [ ] **Mobile Compatibility**: Enhanced support for Android and iOS devices
+
+### Development Roadmap
+
+#### Phase 1: Hardware Miniaturization
+- Design Qt Pi-compatible PCB
+- Integrate battery and charging system
+- Add power management ICs
+
+#### Phase 2: Enhanced Connectivity
+- Implement nRF52840 dual-chip architecture
+- Add 2.4GHz wireless for keyboard halves
+- Develop low-power communication protocols
+
+#### Phase 3: Universal Compatibility
+- Create generic USB HID detection
+- Implement device-specific optimizations
+- Add configuration management system
+
+#### Phase 4: Advanced Features
+- Multi-device connection management
+- Real-time latency optimization
+- Mobile app for configuration
 
 ## Contributing
 
-We welcome contributions! To contribute:
+### Development Setup
+1. Fork this repository
+2. Follow build instructions above
+3. Create feature branch: `git checkout -b feature-name`
+4. Test thoroughly with your hardware
+5. Submit pull request with detailed description
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to your branch
-5. Open a Pull Request
+### Code Style
+- Follow ESP-IDF coding standards
+- Use descriptive variable names
+- Add comprehensive logging for debugging
+- Include error handling for all operations
 
-Please follow our coding standards and include appropriate documentation.
+### Testing
+- Test with multiple keyboard types
+- Verify Windows/Mac/Linux compatibility
+- Validate power consumption measurements
+- Test edge cases (disconnect/reconnect, sleep/wake)
 
 ## License
 
-This project is licensed under the MIT License. See the `LICENSE` file for details.
-
-## Credits
-
-This project builds upon the excellent work of:
-
-- [T-vK](https://github.com/T-vK) for the [ESP32-BLE-Keyboard](https://github.com/T-vK/ESP32-BLE-Keyboard) and [ESP32-BLE-Mouse](https://github.com/T-vK/ESP32-BLE-Mouse) libraries
-- [tobozo](https://github.com/tobozo) for the [ESP32-USB-Soft-Host](https://github.com/tobozo/ESP32-USB-Soft-Host) library
+[Add appropriate license information]
 
 ## Support
 
-For support:
+For issues and questions:
+1. Check troubleshooting section above
+2. Review debug output via `idf.py monitor`
+3. Create GitHub issue with detailed logs
+4. Include hardware setup and ESP-IDF version
 
-- Open a GitHub issue
-- Join our Discord community
-- Check the Wiki for additional documentation
+## Acknowledgments
 
-## Future Plans
-
-- Add multi-device support
-- Implement custom key mapping
-- Develop mobile configuration app
-- Add macro support
+- ESP-IDF team for USB Host and NimBLE implementations
+- CharaChorder team for hardware specifications
+- ESP32 community for BLE HID examples and debugging
