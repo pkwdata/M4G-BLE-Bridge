@@ -51,6 +51,16 @@ void USB_Data_Handler(uint8_t usbNum, uint8_t byte_depth, uint8_t *data, uint8_t
 
 // Setup function called once at the beginning of the program
 void setup() {
+  // Explicitly initialize NVS for bond persistence
+  #if defined(ESP_PLATFORM)
+  #include <nvs_flash.h>
+  esp_err_t ret = nvs_flash_init();
+  if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    nvs_flash_erase();
+    nvs_flash_init();
+  }
+  #endif
+
   // Set callback function for USB interface descriptor detection
   USH.setOnIfaceDescCb(USB_IfaceDesc_Detect);
   // Initialize USB Soft Host and set callback function for USB data handling
@@ -58,6 +68,13 @@ void setup() {
 
   // Begin BLE device communication
   bleDevice.begin();
+
+  // Log bonded devices after BLE init
+  auto bonds = NimBLEDevice::getBondedDevices();
+  printf("Bonded devices after boot: %d\n", (int)bonds.size());
+  for (auto& addr : bonds) {
+    printf("Bonded: %s\n", addr.toString().c_str());
+  }
 }
 
 // Loop function called repeatedly after setup

@@ -145,11 +145,47 @@ void BleDevice::begin(void) {
   hid->hidInfo(0x00, 0x01);
 
   NimBLESecurity* pSecurity = new NimBLESecurity();
-
   pSecurity->setAuthenticationMode(ESP_LE_AUTH_BOND);
+
+  // Register authentication complete callback
+  NimBLEDevice::setAuthCompleteCallback(BleDevice::onAuthenticationComplete);
 
   hid->reportMap((uint8_t*)_hidReportDescriptor, sizeof(_hidReportDescriptor));
   hid->startServices();
+
+  advertising = pServer->getAdvertising();
+  advertising->setAppearance(HID_KEYBOARD);
+  advertising->addServiceUUID(hid->hidService()->getUUID());
+  advertising->setScanResponse(false);
+  advertising->start();
+  hid->setBatteryLevel(100);
+
+  ESP_LOGD(LOG_TAG, "Advertising started!");
+}
+
+// Static callback for authentication complete (now outside begin)
+int BleDevice::onAuthenticationComplete(uint32_t conn_id, NimBLEConnInfo& connInfo, int result) {
+  if (result != 0) {
+    ESP_LOGW(LOG_TAG, "Auth failed for peer: %s, deleting bond (result=%d)", connInfo.getPeerAddress().toString().c_str(), result);
+    NimBLEDevice::deletePeerBonding(connInfo.getPeerAddress());
+    NimBLEServer* server = NimBLEDevice::getServer();
+    if (server && server->getConnId() == conn_id) {
+      server->disconnect(conn_id);
+    }
+    NimBLEAdvertising* adv = server ? server->getAdvertising() : nullptr;
+    if (adv) {
+      adv->stop();
+      // Optional: vTaskDelay(100 / portTICK_PERIOD_MS);
+      esp_err_t err = adv->start();
+      if (err != ESP_OK) {
+        ESP_LOGW(LOG_TAG, "Failed to restart advertising after auth failure: %d", err);
+      } else {
+        ESP_LOGI(LOG_TAG, "Advertising restarted after auth failure");
+      }
+    }
+  }
+  return 0;
+}
 
   advertising = pServer->getAdvertising();
   advertising->setAppearance(HID_KEYBOARD);
@@ -185,6 +221,16 @@ void BleDevice::onConnect(NimBLEServer* pServer) {
 
 void BleDevice::onDisconnect(NimBLEServer* pServer) {
   this->connected = false;
+  if (advertising) {
+    advertising->stop();
+    // Optional: vTaskDelay(100 / portTICK_PERIOD_MS);
+    esp_err_t err = advertising->start();
+    if (err != ESP_OK) {
+      ESP_LOGW(LOG_TAG, "Failed to restart advertising after disconnect: %d", err);
+    } else {
+      ESP_LOGI(LOG_TAG, "Advertising restarted after disconnect");
+    }
+  }
 }
 
 void BleDevice::onWrite(NimBLECharacteristic* pCharacteristic) {
