@@ -358,6 +358,22 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg)
   }
   case BLE_GAP_EVENT_NOTIFY_TX:
     return 0;
+  case BLE_GAP_EVENT_SUBSCRIBE:
+    if (ENABLE_DEBUG_BLE_LOGGING)
+    {
+      LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG, "Subscribe event handle=0x%04X cur_notify=%d cur_indicate=%d", event->subscribe.attr_handle, event->subscribe.cur_notify, event->subscribe.cur_indicate);
+    }
+    if (event->subscribe.attr_handle == s_report_chr_handle)
+    {
+      s_report_notifications_enabled = event->subscribe.cur_notify;
+      LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG, "Report notifications %s (via subscribe)", s_report_notifications_enabled ? "ENABLED" : "disabled");
+    }
+    else if (event->subscribe.attr_handle == s_boot_report_chr_handle)
+    {
+      s_boot_notifications_enabled = event->subscribe.cur_notify;
+      LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG, "Boot notifications %s (via subscribe)", s_boot_notifications_enabled ? "ENABLED" : "disabled");
+    }
+    return 0;
   default:
     break;
   }
