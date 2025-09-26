@@ -1,0 +1,1 @@
+idf_component_register(SRCS "m4g_logging.c" INCLUDE_DIRS "include" REQUIRES nvs_flash esp_system)

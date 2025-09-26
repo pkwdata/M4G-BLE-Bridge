@@ -13,6 +13,8 @@ Then with the help of Claude code I was able to modify this project to provide s
 - **Real-time Processing**: Low-latency keystroke forwarding with 15-byte to 8-byte HID report conversion
 - **Auto-reconnection**: Automatic USB device detection and BLE advertising restart
 - **CharaChorder Optimized**: Specifically tuned for CharaChorder's dual ESP32-S3 internal architecture
+- **Modular Components**: Clean separation of logging, LED status, USB host, BLE HID, and translation (bridge) logic
+- **Persistent Boot Logs**: Captures early boot / crash logs into NVS and dumps them on next startup
 
 ## Hardware Requirements
 
@@ -48,14 +50,14 @@ cd esp-idf
 
 # Set up environment (add to .bashrc for persistence)
 . ./export.sh
-```
+```text
 
 #### Verify Installation
 
 ```bash
 idf.py --version
 # Should show: ESP-IDF v6.0.x
-```
+```text
 
 ## Build and Flash Instructions
 
@@ -68,20 +70,20 @@ cd M4G-BLE-BRIDGE
 
 # Configure project for your ESP32-S3
 idf.py set-target esp32s3
-```
+```text
 
 ### 2. Build
 
 ```bash
 idf.py build
-```
+```text
 
 ### 3. Flash
 
 ```bash
 # Replace /dev/ttyACM0 with your ESP32-S3 port
 idf.py -p /dev/ttyACM0 flash
-```
+```text
 
 ### 4. Monitor
 
@@ -111,12 +113,16 @@ USB Keyboard ──USB-A──> ESP32-S3 ──BLE──> Computer/Device
 4. Complete pairing (encryption is automatic)
 5. Type on your USB keyboard - keystrokes should appear on computer
 
-## LED Status meaning
+## LED Status Meaning
 
-- Red LED - Bluethooth nor USB is connected
-- Yellow LED - Bluetooth is connected but a USB device is not connected
-- Green LED - a USB device is connected but Bluetooth is not
-- Blue LED - Everything is connected and the USB device should be able to type
+| Color | USB Connected | BLE Connected | Meaning |
+|-------|---------------|---------------|---------|
+| Red   | No            | No            | Idle / waiting for both sides |
+| Green | Yes           | No            | USB keyboard detected; waiting for BLE peer |
+| Yellow| No            | Yes           | BLE bonded/connected; waiting for keyboard |
+| Blue  | Yes           | Yes           | Bridge active (typing should work) |
+
+Implemented in the `m4g_led` component so status logic is isolated from main application code.
 
 ## Configuration
 
@@ -142,6 +148,19 @@ Core application with configurable parameters:
 #define CHARACHORDER_VID 0x1A40
 #define CHARACHORDER_PID 0x0101
 ```
+
+### Project Menu (Kconfig)
+
+Custom project options appear under the menu title **"M4G Bridge Options"** in `menuconfig`.
+
+Implementation details:
+
+- The symbols are defined in the root `Kconfig.projbuild` file (standard ESP-IDF inclusion point)
+- `main/Kconfig` is only a stub to avoid duplicate definitions after restructuring
+- If you ever do a deep clean and the menu seems missing, press `/` in `menuconfig` and search for e.g. `M4G_ENABLE_ARROW_MOUSE` to confirm inclusion
+- Run `idf.py fullclean menuconfig` if cache issues hide the menu after file moves
+
+Logging persistence defaults: enabled on QT Py board, disabled on DevKit; toggle via `M4G_LOG_PERSISTENCE`.
 
 ### Customization
 
@@ -201,24 +220,77 @@ Look for these key indicators:
 
 ## Architecture
 
-### System Overview
+### High-Level Data Path
 
 ```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   USB Keyboard  │────│   ESP32-S3 Host  │────│  BLE Client     │
-│                 │    │                  │    │  (Computer)     │
-│ - CharaChorder  │    │ - USB Host Stack │    │ - Windows/Mac   │
-│ - Standard HID  │    │ - NimBLE Stack   │    │ - Linux/Mobile  │
-│ - Hub Support   │    │ - HID Conversion │    │ - Gaming Console│
-└─────────────────┘    └──────────────────┘    └─────────────────┘
+┌────────────┐   Raw HID (CharaChorder / Std)   ┌────────────┐  Std 8‑byte / Mouse  ┌──────────────┐  GATT Notifications  ┌──────────────┐
+│ USB Device │ ───────────────────────────────▶ │  m4g_usb   │ ───────────────────▶ │  m4g_bridge  │ ─────────────────────▶ │  m4g_ble     │
+└────────────┘                                 └────────────┘                       └──────────────┘                        └──────────────┘
+  ▲                                              │                                      │                                        │
+  │                                              │ Logs (macro)                         │ Logs (macro)                         │ Logs (macro)
+  │                                              ▼                                      ▼                                        ▼
+  │                                          m4g_logging  ◀─────────────────────────────┴────────────────────────────────────────┘
+  │                                                                                                                            
+  └─────────────────────────── LED State (m4g_led observes USB + BLE connectivity) ────────────────────────────────────────────▶
 ```
 
-### Data Flow
+### Component Responsibilities
 
-1. **USB Capture**: USB Host library captures HID reports from keyboard
-2. **Format Conversion**: 15-byte CharaChorder reports → 8-byte standard HID
-3. **BLE Transmission**: NimBLE stack sends reports via GATT notifications
-4. **Client Processing**: Computer receives and processes as keyboard input
+| Component      | Responsibility |
+|----------------|----------------|
+| `m4g_logging`  | Unified logging macro (ESP_LOG wrapper) + persistent NVS ring buffer for boot log dump |
+| `m4g_led`      | Maps aggregated connection state (USB present / BLE connected) to a 4‑color status LED |
+| `m4g_usb`      | USB Host stack init, device enumeration, HID interrupt IN transfer scheduling, raw report capture |
+| `m4g_ble`      | BLE GAP + GATT (HID over GATT Profile), bonding, notifications for keyboard & (future) mouse reports |
+| `m4g_bridge`   | Translates raw device reports into standard 8‑byte keyboard HID + optional mouse movement, de-chording / key state management |
+| `main`         | Orchestration only: initialize NVS/logging, BLE, bridge, USB, LED |
+
+### Translation (Bridge) Layer
+
+The CharaChorder (and potentially other advanced keyboards) can emit chorded or extended reports. The `m4g_bridge` component:
+
+1. Receives raw HID packets from `m4g_usb`
+2. Maintains an active key set / chord state
+3. Flattens chords into a standard boot keyboard report (modifier + 6 key slots)
+4. Optionally converts directional key groups (e.g. arrow keys) into relative mouse deltas (enabling rudimentary mouse-emulation) and forwards via `m4g_ble`
+5. Caches last sent keyboard & mouse reports to suppress redundant notifications
+
+This keeps USB acquisition and BLE transport unaware of device‑specific translation rules.
+
+### Persistent Logging
+
+Early boot and intermittent issues are captured using a lightweight append-only log stored in NVS. On each boot:
+
+1. Stored log entries (previous session) are dumped to the console
+2. The buffer is cleared
+3. New entries accumulate during runtime (size bounded)
+
+Enable / disable category logging with compile-time flags (e.g. `ENABLE_DEBUG_USB`, `ENABLE_DEBUG_BLE`) defined in the logging header. All components use the same `LOG_AND_SAVE(level, tag, fmt, ...)` macro so critical events are preserved even if a crash occurs before they reach the monitor.
+
+### Runtime Sequence
+
+1. NVS + logging system initialize and prior boot logs are emitted
+2. BLE stack starts and advertises HID service
+3. Bridge initializes internal key state
+4. USB host starts and begins enumerating devices / scheduling HID IN transfers
+5. As soon as raw reports arrive they are translated and sent over BLE notifications (once a BLE client connects & enables notifications or auto-force logic engages)
+6. LED component updates color whenever USB device presence or BLE connection state changes
+
+### Why This Modularity Matters
+
+- Easier future swaps (e.g. replace BLE HID with 2.4GHz link) without touching USB layer
+- Simplified debugging: isolate whether a problem is acquisition (usb), translation (bridge), or transport (ble)
+- Unit / integration test hooks: each component can add self-test functions invoked during init
+
+### Future Extension Points
+
+- Multi-keyboard merge (aggregate multiple USB endpoints) inside `m4g_bridge`
+- Advanced macro / text expansion dictionary before emitting BLE reports
+- Dynamic configuration service (BLE characteristic or simple RPC) to toggle translation behaviors at runtime
+
+### Previous Simplification Note
+
+Earlier revisions performed conversion directly in `main.c` / USB callback. Those responsibilities were intentionally migrated into `m4g_bridge` to eliminate code duplication and to keep `m4g_usb` a pure acquisition layer.
 
 ## Future Development
 
@@ -323,11 +395,21 @@ For issues and questions:
 - CharaChorder team for hardware specifications
 - ESP32 community for BLE HID examples and debugging
 
-## Known issues
+## Known Issues
 
-- SOLVED - Disconnecting the USB device requires reset of the Bridge device
-- SOLVED - Disconnecting the Bluetooth device does not sucecssfully reconnect, RST Bridge and remove and re-add to OS.
-- Mouse Function of the M4G is not working
-- SOLVED - Blue LED is not coming on once everything is connected and working
-- Not getting enough Power for bridge and keyboard with a single USB cable. Currently using USB Cable to power keyboard and a seperate cable for the bridge device. This will eventually replaced with batteries.
-- Chords are causing characters to get stuck.
+Legend: (S) Solved, (O) Open
+
+- (S) USB disconnect previously required bridge reset
+- (S) BLE reconnection instability (now handled with proper advertising restart + bonding)
+- (S) LED not updating to Blue when both links active
+- (O) Mouse function: basic arrow→mouse mapping exists but full CharaChorder mouse feature set not yet implemented
+- (O) Power delivery: insufficient to power both bridge + keyboard from a single cable on some setups (interim: dual-cable or powered hub) — targeted for battery redesign
+- (O) Occasional chord edge cases: certain rapid chord sequences can produce stuck keys (bridge state machine refinement pending)
+- (Planned) Add self-test assertions (BLE characteristic handle resolution, USB report reception within timeout) on boot
+
+If you encounter a new issue, please open a GitHub issue with:
+
+1. ESP-IDF version
+2. Keyboard model & VID/PID
+3. Serial log excerpt (including persistent boot log dump)
+4. Steps to reproduce

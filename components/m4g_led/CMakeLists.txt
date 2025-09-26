@@ -1,0 +1,1 @@
+idf_component_register(SRCS "m4g_led.c" INCLUDE_DIRS "include" REQUIRES driver led_strip m4g_logging)

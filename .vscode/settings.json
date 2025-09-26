@@ -54,5 +54,5 @@
   "C_Cpp.intelliSenseEngine": "default",
   "editor.formatOnSave": true,
   "files.autoSave": "onFocusChange",
-  "platformio-ide.reopenSerialMonitorDelay": 0
+  "platformio-ide.reopenSerialMonitorDelay": 0,
 }
