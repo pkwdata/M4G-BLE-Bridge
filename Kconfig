@@ -3,6 +3,75 @@
 
 menu "M4G Bridge Options"
 
+menu "Platform Configuration"
+    choice M4G_TARGET
+        prompt "Target Platform"
+        default M4G_TARGET_ESP32S3
+        help
+            Select the target platform for the M4G BLE Bridge.
+
+    config M4G_TARGET_ESP32S3
+        bool "ESP32-S3 (native USB host)"
+        help
+            Build for ESP32-S3 with native USB OTG host capabilities.
+            Supports dual-device CharaChorder and standard keyboards.
+
+    config M4G_TARGET_NRF52840
+        bool "nRF52840 + MAX3421E"
+        help
+            Build for nRF52840 SoC with external MAX3421E USB host controller.
+            Requires custom hardware with MAX3421E connected via SPI.
+    endchoice
+
+    # nRF52840 specific configuration
+    menu "nRF52840 + MAX3421E Configuration"
+        depends on M4G_TARGET_NRF52840
+        
+        config M4G_MAX_DEVICES
+            int "Max simultaneous USB devices"
+            range 1 4
+            default 2
+            help
+                Maximum number of USB HID devices that can be connected simultaneously.
+                
+        config M4G_MAX3421E_SPI_FREQ
+            int "MAX3421E SPI frequency (Hz)"
+            range 1000000 16000000
+            default 8000000
+            help
+                SPI clock frequency for communication with MAX3421E.
+                Higher frequencies may improve performance but check signal integrity.
+                
+        config M4G_MAX3421E_INT_GPIO
+            int "MAX3421E interrupt GPIO"
+            range 0 47
+            default 3
+            help
+                GPIO pin connected to MAX3421E INT output.
+                
+        config M4G_MAX3421E_CS_GPIO
+            int "MAX3421E chip select GPIO"
+            range 0 47
+            default 4
+            help
+                GPIO pin for MAX3421E SPI chip select.
+                
+        config M4G_MAX3421E_RESET_GPIO
+            int "MAX3421E reset GPIO (-1 to disable)"
+            range -1 47
+            default -1
+            help
+                GPIO pin connected to MAX3421E reset input. Set to -1 if not connected.
+                
+        config M4G_NRF52840_SPI_INSTANCE
+            int "SPI instance (0, 1, or 2)"
+            range 0 2
+            default 0
+            help
+                nRF52840 SPI instance to use for MAX3421E communication.
+    endmenu
+endmenu
+
 config M4G_ENABLE_ARROW_MOUSE
     bool "Enable arrow keys -> mouse movement mapping"
     default y
