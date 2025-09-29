@@ -2,6 +2,8 @@
 #include "m4g_ble.h"
 #include "m4g_logging.h"
 #include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "sdkconfig.h"
 
 // Ensure boolean types are available for IntelliSense
@@ -103,45 +105,58 @@ void m4g_bridge_process_usb_report(const uint8_t *report, size_t len)
   uint8_t new_keys[6] = {0};
   size_t nk = extract_chara_keys(kb_payload, kb_len, new_keys);
 
+  // Debug: Always log what keys we extracted
+  if (nk > 0)
+  {
+    LOG_AND_SAVE(true, I, BRIDGE_TAG, "Extracted %zu keys: 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X", 
+                 nk, new_keys[0], new_keys[1], new_keys[2], new_keys[3], new_keys[4], new_keys[5]);
+  }
+
   // Arrow to mouse mapping (optional)
   int mx = 0, my = 0;
 #ifdef CONFIG_M4G_ENABLE_ARROW_MOUSE
   for (size_t i = 0; i < nk; ++i)
   {
+    LOG_AND_SAVE(true, I, BRIDGE_TAG, "Checking key[%zu] = 0x%02X for mouse mapping", i, new_keys[i]);
     switch (new_keys[i])
     {
-    case 0x4F: // Right
-      mx += 10;
-      break;
-    case 0x50: // Left
-      mx -= 10;
-      break;
-    case 0x51: // Down
-      my += 10;
-      break;
-    case 0x52: // Up
+    // CharaChorder mouse movement keys (based on your logs)
+    case 0x29: // Escape - Mouse Up
       my -= 10;
+      LOG_AND_SAVE(true, I, BRIDGE_TAG, "*** MOUSE UP: 0x29 (Escape) ***");
+      break;
+    case 0x08: // Backspace - Mouse Down  
+      my += 10;
+      LOG_AND_SAVE(true, I, BRIDGE_TAG, "*** MOUSE DOWN: 0x08 (Backspace) ***");
+      break;
+    case 0x38: // Forward Slash - Mouse Left
+      mx -= 10;
+      LOG_AND_SAVE(true, I, BRIDGE_TAG, "*** MOUSE LEFT: 0x38 (/) ***");
+      break;
+    case 0x2E: // Period - Mouse Right
+      mx += 10;
+      LOG_AND_SAVE(true, I, BRIDGE_TAG, "*** MOUSE RIGHT: 0x2E (.) ***");
+      break;
+    
+    // Standard arrow keys for cursor movement (keep these for cursor)
+    case 0x4F: // Right Arrow - don't convert to mouse
+    case 0x50: // Left Arrow
+    case 0x51: // Down Arrow
+    case 0x52: // Up Arrow
+      // Let these pass through as normal cursor keys
       break;
     default:
       break;
     }
   }
 
-  // Remove arrow keys from keyboard report payload when mapping to mouse
-  size_t filtered_n = 0;
-  for (size_t i = 0; i < nk; ++i)
+  // DUAL-FUNCTION: Mouse keys work for BOTH mouse movement AND keyboard input
+  // Keep all keys in keyboard report - mouse keys will also type their characters
+  size_t filtered_n = nk;  // Keep all keys, no filtering needed anymore
+  
+  if (ENABLE_DEBUG_KEYPRESS_LOGGING)
   {
-    switch (new_keys[i])
-    {
-    case 0x4F:
-    case 0x50:
-    case 0x51:
-    case 0x52:
-      continue;
-    default:
-      new_keys[filtered_n++] = new_keys[i];
-      break;
-    }
+    LOG_AND_SAVE(true, I, TAG, "Dual-function: Mouse keys will generate BOTH mouse movement AND keyboard input");
   }
   nk = filtered_n;
   if (nk < 6)
@@ -158,19 +173,31 @@ void m4g_bridge_process_usb_report(const uint8_t *report, size_t len)
   // Use cached active keys (non-zero entries) to populate HID slots
   memcpy(&kb_report[2], s_active_keys, 6);
 
+  // Enhanced logging for keyboard report debugging
+  LOG_AND_SAVE(true, I, TAG, "*** KEYBOARD REPORT: mod=0x%02X keys=[0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X]", 
+               kb_report[0], kb_report[2], kb_report[3], kb_report[4], kb_report[5], kb_report[6], kb_report[7]);
+
   // Suppress duplicate consecutive keyboard reports to save BLE airtime (optional)
 #ifdef CONFIG_M4G_ENABLE_DUPLICATE_SUPPRESSION
   bool kb_changed = (!s_have_kb) || (memcmp(s_last_kb_report, kb_report, 8) != 0);
 #else
   bool kb_changed = true;
 #endif
+  
+  LOG_AND_SAVE(true, I, TAG, "*** Keyboard changed: %s, sending keyboard report ***", kb_changed ? "YES" : "NO");
+  
   if (kb_changed)
   {
     if (m4g_ble_send_keyboard_report(kb_report))
     {
+      LOG_AND_SAVE(true, I, TAG, "*** KEYBOARD REPORT SENT SUCCESSFULLY ***");
       memcpy(s_last_kb_report, kb_report, 8);
       s_have_kb = true;
       ++s_kb_sent;
+    }
+    else 
+    {
+      LOG_AND_SAVE(true, E, TAG, "*** KEYBOARD REPORT FAILED TO SEND ***");
     }
     else if (ENABLE_DEBUG_KEYPRESS_LOGGING)
     {
@@ -178,7 +205,7 @@ void m4g_bridge_process_usb_report(const uint8_t *report, size_t len)
     }
   }
 
-  // If any mouse movement, send 3-byte mouse report
+  // Send proper mouse HID reports for detected mouse movement
   if (mx > 127)
     mx = 127;
   else if (mx < -127)
@@ -189,6 +216,7 @@ void m4g_bridge_process_usb_report(const uint8_t *report, size_t len)
     my = -127;
   if (mx || my)
   {
+    LOG_AND_SAVE(true, I, BRIDGE_TAG, "*** Preparing to send mouse report: x=%d y=%d ***", mx, my);
     uint8_t mouse[3] = {0};
     mouse[1] = (uint8_t)mx;
     mouse[2] = (uint8_t)my;
@@ -198,12 +226,22 @@ void m4g_bridge_process_usb_report(const uint8_t *report, size_t len)
 #endif
     if (mouse_changed)
     {
+      LOG_AND_SAVE(true, I, BRIDGE_TAG, "*** Sending mouse report via BLE ***");
       if (m4g_ble_send_mouse_report(mouse))
       {
         memcpy(s_last_mouse_report, mouse, 3);
         s_have_mouse = true;
         ++s_mouse_sent;
+        LOG_AND_SAVE(true, I, BRIDGE_TAG, "*** MOUSE REPORT SENT SUCCESSFULLY ***");
       }
+      else 
+      {
+        LOG_AND_SAVE(true, W, BRIDGE_TAG, "*** MOUSE REPORT FAILED *** (conn=%d notify=%d)", m4g_ble_is_connected(), m4g_ble_notifications_enabled());
+      }
+    }
+    else
+    {
+      LOG_AND_SAVE(true, I, BRIDGE_TAG, "Mouse report unchanged, not sending");
     }
   }
 }

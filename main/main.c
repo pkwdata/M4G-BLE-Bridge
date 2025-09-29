@@ -82,7 +82,7 @@ void app_main(void)
 #endif
     m4g_log_enable_usb(true);
     m4g_log_enable_keypress(true);
-    m4g_log_enable_ble(false);
+    m4g_log_enable_ble(true);
     LOG_AND_SAVE(true, I, TAG, "Booting M4G BLE Bridge");
     init_nvs();
 #if !CONFIG_M4G_BOARD_DEVKIT

@@ -33,6 +33,14 @@ config M4G_ASSERT_BLE_HANDLE
 		If enabled, sending a report before the characteristic handle is resolved
 		triggers an assert (development aid). Disable in production builds.
 
+config M4G_CLEAR_BONDING_ON_BOOT
+	bool "Clear BLE bonding data on startup"
+	default n
+	help
+		If enabled, clears all stored BLE bonding keys on every boot, forcing fresh pairing.
+		Only enable this temporarily to resolve persistent connection issues.
+		Normal operation should keep this disabled to allow reconnection.
+
 config M4G_STACK_WATERMARK_PERIOD_MS
 	int "Stack watermark log period (ms)"
 	range 0 600000

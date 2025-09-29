@@ -97,6 +97,10 @@ static void parse_embedded_report_map(void)
     // Fallback to zero-length safe map
     LOG_AND_SAVE(true, E, BLE_TAG, "HID report map parse produced 0 bytes");
   }
+  else
+  {
+    LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG, "HID report map parsed: %d bytes", s_hid_report_map_len);
+  }
 }
 
 // Connection and state
@@ -279,6 +283,13 @@ static void start_advertising(void)
   memset(&adv_params, 0, sizeof(adv_params));
   adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
   adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+  // Force proper advertising intervals (fix for itvl_min=0 itvl_max=0 issue)
+  adv_params.itvl_min = 32;   // 20ms (32 * 0.625ms) 
+  adv_params.itvl_max = 48;   // 30ms (48 * 0.625ms)
+  
+  LOG_AND_SAVE(true, I, BLE_TAG, "BEFORE ADV START: min=%d max=%d", adv_params.itvl_min, adv_params.itvl_max);
+  adv_params.channel_map = 0;  // Use all channels
+  adv_params.filter_policy = 0; // Allow all connections
   struct ble_hs_adv_fields fields;
   memset(&fields, 0, sizeof(fields));
   fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
@@ -298,6 +309,7 @@ static void start_advertising(void)
     LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, E, BLE_TAG, "adv set fields rc=%d", rc);
     return;
   }
+  LOG_AND_SAVE(true, I, BLE_TAG, "CALLING ble_gap_adv_start with min=%d max=%d", adv_params.itvl_min, adv_params.itvl_max);
   rc = ble_gap_adv_start(s_addr_type, NULL, BLE_HS_FOREVER, &adv_params, gap_event_handler, NULL);
   if (rc != 0)
   {
@@ -333,7 +345,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg)
     }
     return 0;
   case BLE_GAP_EVENT_DISCONNECT:
-    LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG, "Disconnected");
+    LOG_AND_SAVE(true, I, BLE_TAG, "Disconnected: reason=%d", event->disconnect.reason);
     s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     s_report_notifications_enabled = false;
     s_boot_notifications_enabled = false;
@@ -459,7 +471,22 @@ esp_err_t m4g_ble_init(void)
   irc = ble_gatts_add_svcs(hid_svcs);
   if (irc != 0)
     LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, E, BLE_TAG, "add svcs rc=%d", irc);
+  
+  // Configure NVS storage for bonding keys BEFORE ble_store_config_init()
+  ble_hs_cfg.store_read_cb = ble_store_config_read;
+  ble_hs_cfg.store_write_cb = ble_store_config_write;
+  ble_hs_cfg.store_delete_cb = ble_store_config_delete;
   ble_store_config_init();
+  
+  // Optional: Clear bonding data if there were persistent connection issues
+  // This can be enabled manually when needed rather than every boot
+#ifdef CONFIG_M4G_CLEAR_BONDING_ON_BOOT
+  int clear_rc = ble_store_clear();
+  LOG_AND_SAVE(true, W, BLE_TAG, "Cleared bonding store: rc=%d (CONFIG_M4G_CLEAR_BONDING_ON_BOOT enabled)", clear_rc);
+#else
+  LOG_AND_SAVE(true, I, BLE_TAG, "BLE bonding initialized - existing bonds preserved");
+#endif
+  
   nimble_port_freertos_init(host_task);
   discover_report_handles();
   LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG, "BLE HID initialized");
@@ -500,6 +527,13 @@ static bool send_report_internal(uint8_t report_id, const uint8_t *report, size_
     if (copy_len > payload_len - 1)
       copy_len = payload_len - 1;
     memcpy(&payload[1], report, copy_len);
+    
+    // Enhanced logging to debug what's actually being transmitted
+    LOG_AND_SAVE(true, I, BLE_TAG, "BLE TX: Report ID=%02X, len=%d, payload:", report_id, (int)payload_len);
+    for (size_t i = 0; i < payload_len; i++) {
+      ESP_LOGI(BLE_TAG, "  [%d] = 0x%02X", (int)i, payload[i]);
+    }
+    
     sent |= notify_handle(s_report_chr_handle, payload, payload_len);
   }
 
