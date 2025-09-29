@@ -1,20 +1,41 @@
 # ESP32-S3 USB-to-BLE Bridge
 
-A wireless bridge that converts USB keyboards to Bluetooth HID devices using ESP32-S3. Originally designed for the CharaChorder MasterForge keyboard, this project enables any USB keyboard to work wirelessly via Bluetooth Low Energy (BLE).
+A wireless bridge that converts USB keyboards to Bluetooth HID devices using ESP32-S3. Originally designed for the **CharaChorder MasterForge** keyboard, this project enables any USB keyboard to work wirelessly via Bluetooth Low Energy (BLE).
+
+**✨ Recent Updates:**
+- Enhanced CharaChorder support with chord processing delay and dual-device connectivity
+- Platform abstraction layer foundation for future nRF52840+MAX3421E support
+- Improved USB enumeration with CharaChorder-specific detection
+- Configurable chord processing timing to prevent interference with ChordBot
 
 This project was originally started from ths project <https://github.com/jmdmahdi/ESP32-USB-TO-BLE>
 Then with the help of Claude code I was able to modify this project to provide support to the CharaChorder Master Forge. The M4G (MasterForge) requires bridge mode support on the esp32-s3. Because of this I had to move the project from PlatformIO to IDF.
 
 ## Features
 
+### CharaChorder MasterForge Support 🎯
+- **Automatic Detection**: Recognizes CharaChorder devices by VID/PID (0x1A40:0x0101)
+- **Dual-Half Tracking**: Monitors both keyboard halves and requires both for connectivity
+- **Chord Processing Delay**: Configurable 10-1000ms delay to allow internal chord processing
+- **Smart Translation**: Avoids interfering with ChordBot's chord-to-word expansion
+
+### Universal Keyboard Support ⌨️
 - **USB Host Support**: Full USB host functionality with hub support for complex keyboards
+- **HID Report Translation**: Real-time 15-byte to 8-byte HID report conversion
+- **Auto-reconnection**: Automatic USB device detection and BLE advertising restart
+- **Low-latency Processing**: Optimized for responsive keystroke forwarding
+
+### Advanced BLE Features 📡
 - **BLE HID Profile**: Complete BLE HID Over GATT Profile (HOGP) implementation
 - **Windows Compatibility**: Optimized for Windows 10/11 with proper encryption and notification handling
-- **Real-time Processing**: Low-latency keystroke forwarding with 15-byte to 8-byte HID report conversion
-- **Auto-reconnection**: Automatic USB device detection and BLE advertising restart
-- **CharaChorder Optimized**: Specifically tuned for CharaChorder's dual ESP32-S3 internal architecture
+- **Duplicate Suppression**: Optional bandwidth optimization by filtering redundant reports
+- **Robust Bonding**: Automatic reconnection with previously paired devices
+
+### Platform & Architecture 🔧
 - **Modular Components**: Clean separation of logging, LED status, USB host, BLE HID, and translation (bridge) logic
+- **Platform Abstraction**: Foundation for multi-platform support (ESP32-S3, future nRF52840+MAX3421E)
 - **Persistent Boot Logs**: Captures early boot / crash logs into NVS and dumps them on next startup
+- **Advanced Configuration**: Comprehensive Kconfig menu system for customization
 
 ## Hardware Requirements
 

@@ -22,6 +22,8 @@ static usb_host_client_handle_t s_client = NULL;
 static m4g_usb_hid_report_cb_t s_hid_cb = NULL;
 static uint8_t s_active_hid_devices = 0;
 static bool s_rescan_requested = false;
+static bool s_charachorder_detected = false;
+static uint8_t s_charachorder_halves_connected = 0;
 
 // HID device representation (mirrors prior main.c struct)
 typedef struct
@@ -36,6 +38,8 @@ typedef struct
   bool transfer_started;
   bool interface_claimed;
   usb_transfer_t *transfer;
+  bool is_charachorder;
+  uint16_t vid, pid;
 } m4g_usb_hid_device_t;
 
 static m4g_usb_hid_device_t s_hid_devices[2];
@@ -49,9 +53,21 @@ static void setup_hid_transfers(void);
 static void hid_transfer_callback(usb_transfer_t *transfer);
 static bool enum_filter_cb(const usb_device_desc_t *dev_desc, uint8_t *bConfigurationValue);
 
-bool m4g_usb_is_connected(void) { return s_active_hid_devices > 0; }
+bool m4g_usb_is_connected(void) 
+{ 
+  // For CharaChorder, require both halves to be connected
+  if (s_charachorder_detected) {
+    return s_charachorder_halves_connected >= 2;
+  }
+  // For regular keyboards, any device is sufficient
+  return s_active_hid_devices > 0; 
+}
+
 uint8_t m4g_usb_active_hid_count(void) { return s_active_hid_devices; }
 void m4g_usb_request_rescan(void) { s_rescan_requested = true; }
+
+bool m4g_usb_is_charachorder_detected(void) { return s_charachorder_detected; }
+bool m4g_usb_charachorder_both_halves_connected(void) { return s_charachorder_halves_connected >= 2; }
 
 // Placeholder: minimal host event loop (full logic to be migrated from main.c)
 // Unified USB host processing task (library + client events)
@@ -86,13 +102,26 @@ static void usb_host_unified_task(void *arg)
 static bool enum_filter_cb(const usb_device_desc_t *dev_desc, uint8_t *bConfigurationValue)
 {
   LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "Enum filter: VID=0x%04X, PID=0x%04X, Class=0x%02X", dev_desc->idVendor, dev_desc->idProduct, dev_desc->bDeviceClass);
+  
+  // CharaChorder MasterForge detection
+  if (dev_desc->idVendor == CHARACHORDER_VID && dev_desc->idProduct == CHARACHORDER_PID)
+  {
+    s_charachorder_detected = true;
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "CharaChorder MasterForge detected");
+    *bConfigurationValue = 1;
+    return true;
+  }
+  
+  // USB hub detection (likely the CharaChorder's internal hub)
   if (dev_desc->idVendor == 0x1A40 && dev_desc->idProduct == 0x0101)
   {
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "USB Hub detected (likely CharaChorder internal)");
     *bConfigurationValue = 1;
     return true;
   }
   if (dev_desc->bDeviceClass == 0x09)
   {
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "USB Hub class device detected");
     *bConfigurationValue = 1;
     return true;
   }
@@ -129,6 +158,8 @@ static void cleanup_all_devices(void)
   }
   s_active_hid_devices = 0;
   s_claimed_device_count = 0;
+  s_charachorder_detected = false;
+  s_charachorder_halves_connected = 0;
   m4g_led_set_usb_connected(false);
 }
 
@@ -172,11 +203,22 @@ static void enumerate_device(uint8_t dev_addr)
     usb_host_device_close(s_client, dev_hdl);
     return;
   }
+  
+  // Check if this is a CharaChorder device
+  bool is_charachorder = (dev_desc->idVendor == CHARACHORDER_VID && dev_desc->idProduct == CHARACHORDER_PID);
+  if (is_charachorder) {
+    s_charachorder_detected = true;
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "CharaChorder device detected at addr %d", dev_addr);
+  }
+  
+  // Skip USB hubs (we want their children, not the hub itself)
   if (dev_desc->bDeviceClass == 0x09)
   {
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "Skipping USB hub device at addr %d", dev_addr);
     usb_host_device_close(s_client, dev_hdl);
     return;
   }
+  
   const usb_config_desc_t *cfg;
   if (usb_host_get_active_config_descriptor(dev_hdl, &cfg) != ESP_OK)
   {
@@ -211,11 +253,22 @@ static void enumerate_device(uint8_t dev_addr)
         dev->active = true;
         dev->interface_claimed = true;
         dev->transfer = NULL;
-        snprintf(dev->device_name, sizeof(dev->device_name), "HID_%d", dev_addr);
+        dev->is_charachorder = is_charachorder;
+        dev->vid = dev_desc->idVendor;
+        dev->pid = dev_desc->idProduct;
+        
+        if (is_charachorder) {
+          s_charachorder_halves_connected++;
+          snprintf(dev->device_name, sizeof(dev->device_name), "CharaChorder_%d", s_charachorder_halves_connected);
+          LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "CharaChorder half %d connected", s_charachorder_halves_connected);
+        } else {
+          snprintf(dev->device_name, sizeof(dev->device_name), "HID_%d", dev_addr);
+        }
+        
         ++s_active_hid_devices;
         ++s_claimed_device_count;
         hid_claimed = true;
-        LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "Stored HID dev addr=%d ep=0x%02X active=%d", dev_addr, dev->ep_addr, s_active_hid_devices);
+        LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "Stored HID dev addr=%d ep=0x%02X active=%d charachorder=%d", dev_addr, dev->ep_addr, s_active_hid_devices, is_charachorder);
         if (!dev->ep_addr)
         {
           usb_host_interface_release(s_client, dev_hdl, dev->intf_num);
@@ -223,6 +276,7 @@ static void enumerate_device(uint8_t dev_addr)
           dev->active = false;
           --s_active_hid_devices;
           --s_claimed_device_count;
+          if (is_charachorder) s_charachorder_halves_connected--;
           hid_claimed = false;
         }
       }
@@ -251,8 +305,8 @@ static void hid_transfer_callback(usb_transfer_t *transfer)
     // Removed unused kb_report buffer (was unused after delegation to bridge)
     if (transfer->actual_num_bytes > 0)
     {
-      // Delegate raw report to bridge (which will emit BLE reports as needed)
-      m4g_bridge_process_usb_report(transfer->data_buffer, transfer->actual_num_bytes);
+      // Delegate raw report to bridge with CharaChorder flag
+      m4g_bridge_process_usb_report(transfer->data_buffer, transfer->actual_num_bytes, dev->is_charachorder);
     }
   }
   else
@@ -300,6 +354,9 @@ static void setup_hid_transfers(void)
   {
     m4g_led_set_usb_connected(true);
     LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "USB fully connected");
+    
+    // Notify bridge about CharaChorder status
+    m4g_bridge_set_charachorder_status(s_charachorder_detected, s_charachorder_halves_connected >= 2);
   }
 }
 
