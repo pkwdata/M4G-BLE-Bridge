@@ -2,9 +2,6 @@
 	"folders": [
 		{
 			"uri": "vscode-vfs://github/pkwdata/M4G-BLE-Bridge"
-		},
-		{
-			"path": "debug"
 		}
 	],
 	"settings": {

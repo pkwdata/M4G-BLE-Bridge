@@ -55,4 +55,5 @@
   "editor.formatOnSave": true,
   "files.autoSave": "onFocusChange",
   "platformio-ide.reopenSerialMonitorDelay": 0,
+  "idf.pythonInstallPath": "/usr/bin/python3",
 }
