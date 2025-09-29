@@ -48,6 +48,30 @@ config M4G_ASSERT_BLE_HANDLE
         If enabled, sending a report before the characteristic handle is resolved
         triggers an assert (development aid).
 
+menu "CharaChorder Configuration"
+    config M4G_CHARACHORDER_CHORD_DELAY_MS
+        int "CharaChorder chord processing delay (ms)"
+        range 10 1000
+        default 50
+        help
+            Delay in milliseconds before processing CharaChorder reports to allow
+            internal chord processing. This prevents interfering with chord expansion.
+            
+    config M4G_CHARACHORDER_REQUIRE_BOTH_HALVES
+        bool "Require both CharaChorder halves for connection"
+        default y
+        help
+            When enabled, CharaChorder devices require both keyboard halves to be
+            detected before being considered "connected".
+            
+    config M4G_CHARACHORDER_RAW_MODE
+        bool "CharaChorder raw mode (disable chord processing)"
+        default n
+        help
+            When enabled, passes CharaChorder reports through unchanged without
+            any chord processing delay. Use for debugging or special applications.
+endmenu
+
 config M4G_STACK_WATERMARK_PERIOD_MS
     int "Stack watermark log period (ms)"
     range 0 600000

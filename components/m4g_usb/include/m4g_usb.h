@@ -3,6 +3,10 @@
 #include <stdbool.h>
 #include "esp_err.h"
 
+// CharaChorder VID/PID constants
+#define CHARACHORDER_VID 0x1A40
+#define CHARACHORDER_PID 0x0101
+
 // Callback signature for delivering raw HID input reports (up to 64 bytes)
 typedef void (*m4g_usb_hid_report_cb_t)(const uint8_t *data, size_t len);
 
@@ -25,3 +29,9 @@ void m4g_usb_request_rescan(void);
 
 // Whether the USB side is logically "connected" (>=1 active device)
 bool m4g_usb_is_connected(void);
+
+// Whether a CharaChorder device is detected
+bool m4g_usb_is_charachorder_detected(void);
+
+// Whether CharaChorder has both halves connected (required for proper operation)
+bool m4g_usb_charachorder_both_halves_connected(void);
