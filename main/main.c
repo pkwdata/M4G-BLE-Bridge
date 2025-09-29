@@ -1,6 +1,7 @@
 // Orchestrator main after modularization
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -15,6 +16,19 @@
 #include "m4g_usb.h"
 #include "m4g_bridge.h"
 #include "m4g_diag.h"
+
+// Ensure boolean types are available for IntelliSense
+#ifndef __cplusplus
+#ifndef true
+#define true 1
+#endif
+#ifndef false
+#define false 0
+#endif
+#ifndef bool
+#define bool _Bool
+#endif
+#endif
 
 static const char *TAG = "M4G-BLE-BRIDGE";
 

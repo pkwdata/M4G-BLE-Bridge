@@ -155,7 +155,7 @@ Custom project options appear under the menu title **"M4G Bridge Options"** in `
 
 Implementation details:
 
-- The symbols are defined in the root `Kconfig.projbuild` file (standard ESP-IDF inclusion point)
+- The symbols are defined in the repository root `Kconfig` file (set via `__ROOT_KCONFIG` in CMake)
 - `main/Kconfig` is only a stub to avoid duplicate definitions after restructuring
 - If you ever do a deep clean and the menu seems missing, press `/` in `menuconfig` and search for e.g. `M4G_ENABLE_ARROW_MOUSE` to confirm inclusion
 - Run `idf.py fullclean menuconfig` if cache issues hide the menu after file moves

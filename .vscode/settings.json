@@ -52,8 +52,13 @@
     "typeinfo": "cpp"
   },
   "C_Cpp.intelliSenseEngine": "default",
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+  "C_Cpp.default.browse.limitSymbolsToIncludedHeaders": false,
+  "C_Cpp.default.browse.databaseFilename": "${workspaceFolder}/.vscode/browse.vc.db",
   "editor.formatOnSave": true,
   "files.autoSave": "onFocusChange",
   "platformio-ide.reopenSerialMonitorDelay": 0,
   "idf.pythonInstallPath": "/usr/bin/python3",
+  "idf.espIdfPath": "/home/me/esp/esp-idf",
+  "idf.toolsPath": "/home/me/.espressif",
 }

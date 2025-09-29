@@ -19,6 +19,19 @@
 #include "services/gatt/ble_svc_gatt.h"
 #include "host/ble_store.h" // for ble_store_config_init / ble_store_util_status_rr
 
+// Ensure boolean types are available for IntelliSense
+#ifndef __cplusplus
+#ifndef true
+#define true 1
+#endif
+#ifndef false
+#define false 0
+#endif
+#ifndef bool
+#define bool _Bool
+#endif
+#endif
+
 // Forward declare USB helper if its header is not already included here
 extern uint8_t m4g_usb_active_hid_count(void);
 
@@ -132,7 +145,7 @@ static int hid_svc_access_cb(uint16_t conn_handle, uint16_t attr_handle, struct 
   int rc;
   static uint8_t protocol_mode = 1; // Report Protocol
   uint8_t hid_info[4] = {0x11, 0x01, 0x00, 0x00};
-  uint8_t report_ref_kbd[2] = {0x00, 0x01};
+  uint8_t report_ref_kbd[2] = {0x01, 0x01};
   switch (ctxt->op)
   {
   case BLE_GATT_ACCESS_OP_READ_CHR:
@@ -162,7 +175,8 @@ static int hid_svc_access_cb(uint16_t conn_handle, uint16_t attr_handle, struct 
     }
     if (ble_uuid_cmp(ctxt->chr->uuid, BLE_UUID16_DECLARE(BLE_HID_CHARACTERISTIC_REPORT_UUID)) == 0)
     {
-      uint8_t empty[8] = {0};
+      uint8_t empty[9] = {0};
+      empty[0] = 0x01; // default to keyboard report ID
       rc = os_mbuf_append(ctxt->om, empty, sizeof(empty));
       return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
@@ -467,26 +481,38 @@ static bool notify_handle(uint16_t chr_handle, const uint8_t *report, size_t len
   return true;
 }
 
-static bool send_report_internal(const uint8_t *report, size_t len)
+static bool send_report_internal(uint8_t report_id, const uint8_t *report, size_t len, bool notify_boot)
 {
   if (!m4g_ble_is_connected())
     return false;
-  if (len > 64)
-    len = 64; // safety cap
+
   bool sent = false;
 
   if (s_report_notifications_enabled && s_report_chr_handle != 0)
   {
-    sent |= notify_handle(s_report_chr_handle, report, len);
+    uint8_t payload[65];
+    size_t payload_len = len + 1;
+    if (payload_len > sizeof(payload))
+      payload_len = sizeof(payload);
+    memset(payload, 0, payload_len);
+    payload[0] = report_id;
+    size_t copy_len = len;
+    if (copy_len > payload_len - 1)
+      copy_len = payload_len - 1;
+    memcpy(&payload[1], report, copy_len);
+    sent |= notify_handle(s_report_chr_handle, payload, payload_len);
   }
 
-  if (s_boot_notifications_enabled && s_boot_report_chr_handle != 0)
+  if (notify_boot && s_boot_notifications_enabled && s_boot_report_chr_handle != 0)
   {
-    sent |= notify_handle(s_boot_report_chr_handle, report, len);
+    size_t boot_len = len;
+    if (boot_len > 64)
+      boot_len = 64;
+    sent |= notify_handle(s_boot_report_chr_handle, report, boot_len);
   }
 
 #ifdef CONFIG_M4G_ASSERT_BLE_HANDLE
-  if (!sent && (s_report_notifications_enabled || s_boot_notifications_enabled))
+  if (!sent && (s_report_notifications_enabled || (notify_boot && s_boot_notifications_enabled)))
   {
     assert(false && "Failed to notify any HID characteristic");
   }
@@ -495,7 +521,7 @@ static bool send_report_internal(const uint8_t *report, size_t len)
   return sent;
 }
 
-bool m4g_ble_send_keyboard_report(const uint8_t report[8]) { return send_report_internal(report, 8); }
-bool m4g_ble_send_mouse_report(const uint8_t report[3]) { return send_report_internal(report, 3); }
+bool m4g_ble_send_keyboard_report(const uint8_t report[8]) { return send_report_internal(0x01, report, 8, true); }
+bool m4g_ble_send_mouse_report(const uint8_t report[3]) { return send_report_internal(0x02, report, 3, false); }
 void m4g_ble_start_advertising(void) { start_advertising(); }
 void m4g_ble_host_task(void *param) { host_task(param); }

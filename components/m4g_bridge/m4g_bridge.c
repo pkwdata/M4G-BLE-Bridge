@@ -4,6 +4,19 @@
 #include <string.h>
 #include "sdkconfig.h"
 
+// Ensure boolean types are available for IntelliSense
+#ifndef __cplusplus
+#ifndef true
+#define true 1
+#endif
+#ifndef false
+#define false 0
+#endif
+#ifndef bool
+#define bool _Bool
+#endif
+#endif
+
 static const char *BRIDGE_TAG = "M4G-BRIDGE";
 
 // Maintain current active chord keys (up to 6 standard HID slots)
@@ -89,18 +102,9 @@ void m4g_bridge_process_usb_report(const uint8_t *report, size_t len)
 
   uint8_t new_keys[6] = {0};
   size_t nk = extract_chara_keys(kb_payload, kb_len, new_keys);
-  update_active_keys(new_keys, nk);
-
-  // Build standard 8-byte keyboard HID report
-  uint8_t kb_report[8] = {0};
-  kb_report[0] = (kb_len >= 1) ? kb_payload[0] : 0;
-  kb_report[1] = 0; // reserved
-
-  // Use cached active keys (non-zero entries) to populate HID slots
-  memcpy(&kb_report[2], s_active_keys, 6);
 
   // Arrow to mouse mapping (optional)
-  int8_t mx = 0, my = 0;
+  int mx = 0, my = 0;
 #ifdef CONFIG_M4G_ENABLE_ARROW_MOUSE
   for (size_t i = 0; i < nk; ++i)
   {
@@ -122,7 +126,37 @@ void m4g_bridge_process_usb_report(const uint8_t *report, size_t len)
       break;
     }
   }
+
+  // Remove arrow keys from keyboard report payload when mapping to mouse
+  size_t filtered_n = 0;
+  for (size_t i = 0; i < nk; ++i)
+  {
+    switch (new_keys[i])
+    {
+    case 0x4F:
+    case 0x50:
+    case 0x51:
+    case 0x52:
+      continue;
+    default:
+      new_keys[filtered_n++] = new_keys[i];
+      break;
+    }
+  }
+  nk = filtered_n;
+  if (nk < 6)
+    memset(&new_keys[nk], 0, (6 - nk) * sizeof(uint8_t));
 #endif
+
+  update_active_keys(new_keys, nk);
+
+  // Build standard 8-byte keyboard HID report
+  uint8_t kb_report[8] = {0};
+  kb_report[0] = (kb_len >= 1) ? kb_payload[0] : 0;
+  kb_report[1] = 0; // reserved
+
+  // Use cached active keys (non-zero entries) to populate HID slots
+  memcpy(&kb_report[2], s_active_keys, 6);
 
   // Suppress duplicate consecutive keyboard reports to save BLE airtime (optional)
 #ifdef CONFIG_M4G_ENABLE_DUPLICATE_SUPPRESSION
@@ -145,6 +179,14 @@ void m4g_bridge_process_usb_report(const uint8_t *report, size_t len)
   }
 
   // If any mouse movement, send 3-byte mouse report
+  if (mx > 127)
+    mx = 127;
+  else if (mx < -127)
+    mx = -127;
+  if (my > 127)
+    my = 127;
+  else if (my < -127)
+    my = -127;
   if (mx || my)
   {
     uint8_t mouse[3] = {0};

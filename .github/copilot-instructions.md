@@ -34,7 +34,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 
 ### Configuration Management
 - `sdkconfig.defaults`: Base config optimized for USB host + BLE HID + Windows compatibility
-- `Kconfig.projbuild`: Project-specific options under `M4G_BRIDGE_FEATURES` menu
+- `Kconfig`: Project-specific options surfaced at the top level (`M4G Bridge Options` menu)
 - Use `idf.py menuconfig` to modify, never edit `sdkconfig` directly
 
 ### Debug Logging Control

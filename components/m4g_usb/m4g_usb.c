@@ -13,6 +13,19 @@
 #include <stdio.h>
 #include "sdkconfig.h"
 
+// Ensure boolean types are available for IntelliSense
+#ifndef __cplusplus
+#ifndef true
+#define true 1
+#endif
+#ifndef false
+#define false 0
+#endif
+#ifndef bool
+#define bool _Bool
+#endif
+#endif
+
 static const char *USB_TAG = "M4G-USB";
 
 #define USB_HOST_PRIORITY 20

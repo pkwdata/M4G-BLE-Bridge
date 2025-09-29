@@ -1,143 +1,216 @@
-# Root-level Kconfig for M4G BLE Bridge
-# This makes the menu appear at the top level in menuconfig.
+mainmenu "Espressif IoT Development Framework Configuration"
+
+source "$IDF_PATH/Kconfig"
 
 menu "M4G Bridge Options"
 
 config M4G_ENABLE_ARROW_MOUSE
-    bool "Enable arrow keys -> mouse movement mapping"
-    default y
-    help
-        When enabled, the bridge will translate arrow keys into relative mouse
-        movements. Disable to pass arrow keys through unchanged.
+	bool "Enable arrow keys -> mouse movement mapping"
+	default y
+	help
+		When enabled, the bridge will translate arrow keys into relative mouse
+		movements. Disable to pass arrow keys through unchanged.
 
 config M4G_ENABLE_DUPLICATE_SUPPRESSION
-    bool "Suppress duplicate consecutive HID reports"
-    default y
-    help
-        When enabled, identical consecutive keyboard/mouse reports will not be
-        re-sent over BLE to reduce bandwidth and power.
+	bool "Suppress duplicate consecutive HID reports"
+	default y
+	help
+		When enabled, identical consecutive keyboard/mouse reports will not be
+		re-sent over BLE to reduce bandwidth and power consumption.
 
 config M4G_LOG_PERSISTENCE
-    bool "Persist logs to NVS"
-    default y if M4G_BOARD_QTPY
-    default n if M4G_BOARD_DEVKIT
-    help
-        Controls whether logs are appended to an NVS blob for retrieval on next boot.
-        Default: enabled for QT Py board, disabled for DevKit.
-
-config M4G_LOG_BUFFER_SIZE
-    int "In-RAM log staging buffer size (bytes)"
-    depends on M4G_LOG_PERSISTENCE
-    range 256 4096
-    default 1024
-    help
-        Size of the RAM buffer used to stage log lines before flushing to NVS.
-
-config M4G_LOG_FLUSH_THRESHOLD
-    int "Flush threshold (bytes)"
-    depends on M4G_LOG_PERSISTENCE
-    range 64 4096
-    default 512
-    help
-        When the staging buffer reaches this many bytes, it will be flushed to NVS.
+	bool "Persist logs to NVS"
+	default y if M4G_BOARD_QTPY
+	default n if M4G_BOARD_DEVKIT
+	help
+		Controls whether logs are appended to an NVS blob for retrieval on next boot.
+		Default: enabled for QT Py board, disabled for DevKit.
 
 config M4G_ASSERT_BLE_HANDLE
-    bool "Assert BLE report handle resolved"
-    default y
-    help
-        If enabled, sending a report before the characteristic handle is resolved
-        triggers an assert (development aid).
+	bool "Assert BLE report handle resolved"
+	default y
+	help
+		If enabled, sending a report before the characteristic handle is resolved
+		triggers an assert (development aid). Disable in production builds.
 
 config M4G_STACK_WATERMARK_PERIOD_MS
-    int "Stack watermark log period (ms)"
-    range 0 600000
-    default 30000
-    help
-        Period for logging stack high-water marks. 0 disables periodic logging.
+	int "Stack watermark log period (ms)"
+	range 0 600000
+	default 30000
+	help
+		Period for logging stack high-water marks. 0 disables periodic logging.
+		Useful for debugging memory usage and preventing stack overflows.
 
 config M4G_STACK_WATERMARK_MAX_TASKS
-    int "Max tasks tracked for stack watermark"
-    range 4 64
-    default 24
-    help
-        Maximum number of tasks whose high-water marks are sampled (static array size).
+	int "Max tasks tracked for stack watermark"
+	range 4 64
+	default 24
+	help
+		Maximum number of tasks whose high-water marks are sampled (static array size).
 
 config M4G_IDLE_SLEEP_TIMEOUT_MS
-    int "Idle light-sleep timeout (ms)"
-    range 0 3600000
-    default 60000
-    help
-        If >0, when there is no BLE connection and no USB HID devices for this duration, the
-        system will enter light sleep to save power until a wake source triggers.
+	int "Idle light-sleep timeout (ms)"
+	range 0 3600000
+	default 60000
+	help
+		If >0, when there is no BLE connection and no USB HID devices for this duration, the
+		system will enter light sleep to save power until a wake source triggers.
+		Set to 0 to disable automatic sleep.
 
 config M4G_ENABLE_DIAG_GATT
-    bool "Enable diagnostic GATT characteristic"
-    default y
-    help
-        Adds a diagnostic characteristic that returns a status snapshot when read.
+	bool "Enable diagnostic GATT characteristic"
+	default y
+	help
+		Adds a diagnostic characteristic that returns a system status snapshot when read.
+		Useful for remote debugging and monitoring.
 
 config M4G_DIAG_TASK_STACK_SIZE
-    int "Diagnostics task stack size (bytes)"
-    range 1024 8192
-    default 4096
-    help
-        Stack size for the optional diagnostics periodic task (m4g_diag). Increase if you
-        see stack overflow logs referencing the m4g_diag task.
+	int "Diagnostics task stack size (bytes)"
+	depends on M4G_ENABLE_DIAG_GATT
+	range 1024 8192
+	default 4096
+	help
+		Stack size for the optional diagnostics periodic task (m4g_diag). Increase if you
+		see stack overflow logs referencing the m4g_diag task.
+		Only applies when diagnostic GATT characteristic is enabled.
 
 menu "Board Configuration"
 
 choice M4G_BOARD_SELECT
-    prompt "Target board"
-    default M4G_BOARD_DEVKIT
-    help
-        Select the hardware variant to apply sensible defaults for GPIOs.
+	prompt "Target board"
+	default M4G_BOARD_DEVKIT
+	help
+		Select the hardware variant to apply sensible defaults for GPIOs.
 
 config M4G_BOARD_DEVKIT
-    bool "ESP32-S3 DevKit"
+	bool "ESP32-S3 DevKit"
 
 config M4G_BOARD_QTPY
-    bool "Adafruit QT Py ESP32-S3"
+	bool "Adafruit QT Py ESP32-S3"
 
 endchoice
 
 choice M4G_LED_TYPE
-    prompt "LED type"
-    default M4G_LED_TYPE_NEOPIXEL if M4G_BOARD_DEVKIT
-    default M4G_LED_TYPE_NEOPIXEL if M4G_BOARD_QTPY
-    help
-        Select style of status LED.
-    config M4G_LED_TYPE_NONE
-        bool "None"
-    config M4G_LED_TYPE_SIMPLE
-        bool "Simple GPIO (future)"
-    config M4G_LED_TYPE_NEOPIXEL
-        bool "NeoPixel / WS2812"
+	prompt "LED type"
+	default M4G_LED_TYPE_NEOPIXEL if M4G_BOARD_DEVKIT
+	default M4G_LED_TYPE_NEOPIXEL if M4G_BOARD_QTPY
+	help
+		Select style of status LED.
+	config M4G_LED_TYPE_NONE
+		bool "None"
+	config M4G_LED_TYPE_SIMPLE
+		bool "Simple GPIO (future)"
+	config M4G_LED_TYPE_NEOPIXEL
+		bool "NeoPixel / WS2812"
 endchoice
 
 config M4G_LED_DATA_GPIO
-    int "LED data GPIO"
-    default 48 if M4G_BOARD_DEVKIT
-    default 38 if M4G_BOARD_QTPY
-    range 0 48
-    help
-        GPIO output driving the status LED (NeoPixel or single LED).
+	int "LED data GPIO"
+	depends on !M4G_LED_TYPE_NONE
+	default 48 if M4G_BOARD_DEVKIT
+	default 38 if M4G_BOARD_QTPY
+	range 0 48
+	help
+		GPIO output driving the status LED (NeoPixel or single LED).
 
 config M4G_LED_POWER_GPIO
-    int "LED power enable GPIO (-1 to disable)"
-    default -1 if M4G_BOARD_DEVKIT
-    default -1 if M4G_BOARD_QTPY
-    default -1
-    range -1 48
-    help
-        Optional power/enable pin for LED. Set -1 if not used.
+	int "LED power enable GPIO (-1 to disable)"
+	depends on !M4G_LED_TYPE_NONE
+	default -1 if M4G_BOARD_DEVKIT
+	default -1 if M4G_BOARD_QTPY
+	default -1
+	range -1 48
+	help
+		Optional power/enable pin for LED. Set -1 if not used.
 
 config M4G_VBUS_ENABLE_GPIO
-    int "VBUS enable GPIO (-1 if none)"
-    default -1
-    range -1 48
-    help
-        Optional GPIO controlling a load switch to source 5V for USB host. -1 disables.
+	int "VBUS enable GPIO (-1 if none)"
+	default -1
+	range -1 48
+	help
+		Optional GPIO controlling a load switch to source 5V for USB host. -1 disables.
 
-endmenu
+endmenu  # Board Configuration
 
-endmenu
+menu "Advanced Configuration"
+
+config M4G_LOG_BUFFER_SIZE
+	int "In-RAM log staging buffer size (bytes)"
+	depends on M4G_LOG_PERSISTENCE
+	range 256 4096
+	default 1024
+	help
+		Size of the RAM buffer used to stage log lines before flushing to NVS.
+
+config M4G_LOG_FLUSH_THRESHOLD
+	int "Flush threshold (bytes)"
+	depends on M4G_LOG_PERSISTENCE
+	range 64 4096
+	default 512
+	help
+		When the staging buffer reaches this many bytes, it will be flushed to NVS.
+
+config M4G_USB_ENUMERATION_TIMEOUT_MS
+	int "USB enumeration timeout (ms)"
+	range 500 5000
+	default 1000
+	help
+		Timeout for USB device enumeration. Increase for problematic devices or hubs.
+		CharaChorder dual-half keyboards may need longer timeout.
+
+config M4G_USB_POLL_PERIOD_MS
+	int "USB host polling period (ms)"
+	range 10 500
+	default 100
+	help
+		Period for USB host library event processing. Lower values provide better
+		responsiveness but consume more CPU. 100ms is a good balance.
+
+config M4G_USB_DEBOUNCE_DELAY_MS
+	int "USB device debounce delay (ms)"
+	range 10 200
+	default 50
+	help
+		Delay after USB device detection before attempting enumeration.
+		Helps with device stability during connection.
+
+config M4G_BLE_DEVICE_NAME
+	string "BLE device name"
+	default "M4G-BLE-Bridge"
+	help
+		Name advertised by the BLE bridge. This name will appear when scanning
+		for Bluetooth devices on the host computer.
+
+config M4G_BLE_MANUFACTURER_NAME
+	string "BLE manufacturer name"
+	default "M4G Bridge"
+	help
+		Manufacturer name reported in BLE device information service.
+
+config M4G_BLE_CONN_INTERVAL_MIN_MS
+	int "BLE connection interval minimum (ms)"
+	range 7 4000
+	default 20
+	help
+		Minimum BLE connection interval in milliseconds. Lower values provide
+		better latency but consume more power. 20ms is optimal for HID devices.
+
+config M4G_BLE_CONN_INTERVAL_MAX_MS
+	int "BLE connection interval maximum (ms)"
+	range 7 4000
+	default 40
+	help
+		Maximum BLE connection interval in milliseconds. Should be >= minimum.
+		40ms provides good balance of latency and power consumption.
+
+config M4G_MAIN_TASK_STACK_SIZE
+	int "Main task stack size (bytes)"
+	range 8192 32768
+	default 16384
+	help
+		Stack size for the main application task. Should be sufficient for USB enumeration
+		complexity and BLE stack operations. 16384 is recommended for USB host functionality.
+
+endmenu  # Advanced Configuration
+
+endmenu  # M4G Bridge Options
