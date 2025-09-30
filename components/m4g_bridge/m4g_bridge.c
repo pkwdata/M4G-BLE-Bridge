@@ -21,8 +21,19 @@
 
 static const char *BRIDGE_TAG = "M4G-BRIDGE";
 
-// Maintain current active chord keys (up to 6 standard HID slots)
-static uint8_t s_active_keys[6] = {0};
+#define M4G_MAX_BUFFERED_KEYS 16
+#define M4G_CHORD_OUTPUT_GRACE_MS 15
+
+typedef struct
+{
+  bool present;
+  uint8_t modifiers;
+  uint8_t keys[6];
+} bridge_slot_state_t;
+
+static bridge_slot_state_t s_slots[M4G_BRIDGE_MAX_SLOTS];
+static bool s_warned_invalid_slot = false;
+
 static uint8_t s_last_kb_report[8] = {0};
 static uint8_t s_last_mouse_report[3] = {0};
 static bool s_have_kb = false;
@@ -30,12 +41,39 @@ static bool s_have_mouse = false;
 static uint32_t s_kb_sent = 0;
 static uint32_t s_mouse_sent = 0;
 
-static void update_active_keys(const uint8_t *keys, size_t n)
+typedef struct
 {
-  memset(s_active_keys, 0, sizeof(s_active_keys));
-  for (size_t i = 0; i < n && i < 6; ++i)
-    s_active_keys[i] = keys[i];
-}
+  uint8_t modifiers;
+  uint8_t keys[6];
+  size_t key_count;
+#ifdef CONFIG_M4G_ENABLE_ARROW_MOUSE
+  int mouse_dx;
+  int mouse_dy;
+#endif
+} combined_state_t;
+
+typedef enum
+{
+  CHORD_STATE_IDLE = 0,
+  CHORD_STATE_COLLECTING,
+  CHORD_STATE_EXPECTING_OUTPUT,
+  CHORD_STATE_PASSING_OUTPUT,
+} chord_state_t;
+
+static chord_state_t s_chord_state = CHORD_STATE_IDLE;
+static uint8_t s_chord_buffer[M4G_MAX_BUFFERED_KEYS];
+static size_t s_chord_buffer_len = 0;
+static uint8_t s_chord_buffer_modifiers = 0;
+static TickType_t s_expect_output_tick = 0;
+static bool s_output_sequence_active = false;
+
+static void compute_combined_state(combined_state_t *state);
+static void process_combined_state(const combined_state_t *state);
+static void emit_keyboard_state(uint8_t modifiers, const uint8_t keys[6], bool allow_mouse, int mx, int my);
+static void chord_buffer_reset(void);
+static void chord_buffer_add(const combined_state_t *state);
+static void send_buffered_single_key(void);
+
 
 static size_t extract_chara_keys(const uint8_t *kb_payload, size_t len, uint8_t *out6)
 {
@@ -51,10 +89,329 @@ static size_t extract_chara_keys(const uint8_t *kb_payload, size_t len, uint8_t 
   return n;
 }
 
+static void chord_buffer_reset(void)
+{
+  memset(s_chord_buffer, 0, sizeof(s_chord_buffer));
+  s_chord_buffer_len = 0;
+  s_chord_buffer_modifiers = 0;
+  s_output_sequence_active = false;
+}
+
+static void chord_buffer_add(const combined_state_t *state)
+{
+  s_chord_buffer_modifiers |= state->modifiers;
+  for (size_t i = 0; i < state->key_count; ++i)
+  {
+    uint8_t key = state->keys[i];
+    if (key == 0)
+      continue;
+    bool already_present = false;
+    for (size_t j = 0; j < s_chord_buffer_len; ++j)
+    {
+      if (s_chord_buffer[j] == key)
+      {
+        already_present = true;
+        break;
+      }
+    }
+    if (!already_present && s_chord_buffer_len < M4G_MAX_BUFFERED_KEYS)
+    {
+      s_chord_buffer[s_chord_buffer_len++] = key;
+    }
+  }
+}
+
+static void compute_combined_state(combined_state_t *state)
+{
+  memset(state, 0, sizeof(*state));
+
+  uint8_t combined_keys[6] = {0};
+  size_t combined_count = 0;
+
+  for (uint8_t slot = 0; slot < M4G_BRIDGE_MAX_SLOTS; ++slot)
+  {
+    if (!s_slots[slot].present)
+      continue;
+
+    state->modifiers |= s_slots[slot].modifiers;
+    for (size_t i = 0; i < 6; ++i)
+    {
+      uint8_t key = s_slots[slot].keys[i];
+      if (key == 0)
+        continue;
+      bool already_present = false;
+      for (size_t j = 0; j < combined_count; ++j)
+      {
+        if (combined_keys[j] == key)
+        {
+          already_present = true;
+          break;
+        }
+      }
+      if (!already_present && combined_count < 6)
+      {
+        combined_keys[combined_count++] = key;
+      }
+    }
+  }
+
+  memcpy(state->keys, combined_keys, sizeof(state->keys));
+  state->key_count = combined_count;
+
+#ifdef CONFIG_M4G_ENABLE_ARROW_MOUSE
+  int mx = 0;
+  int my = 0;
+  for (size_t i = 0; i < combined_count; ++i)
+  {
+    switch (combined_keys[i])
+    {
+    case 0x29: // Escape - Mouse Up
+      my -= 10;
+      break;
+    case 0x08: // Backspace - Mouse Down
+      my += 10;
+      break;
+    case 0x38: // Forward Slash - Mouse Left
+      mx -= 10;
+      break;
+    case 0x2E: // Period - Mouse Right
+      mx += 10;
+      break;
+    default:
+      break;
+    }
+  }
+  state->mouse_dx = mx;
+  state->mouse_dy = my;
+#endif
+}
+
 esp_err_t m4g_bridge_init(void)
 {
   // Currently stateless; placeholder for future mapping tables/macros
+  chord_buffer_reset();
+  s_chord_state = CHORD_STATE_IDLE;
+  s_expect_output_tick = xTaskGetTickCount();
   return ESP_OK;
+}
+
+static void emit_keyboard_state(uint8_t modifiers, const uint8_t keys[6], bool allow_mouse, int mx, int my)
+{
+  uint8_t kb_report[8] = {0};
+  kb_report[0] = modifiers;
+  kb_report[1] = 0;
+  memcpy(&kb_report[2], keys, 6);
+
+  if (ENABLE_DEBUG_KEYPRESS_LOGGING)
+  {
+    LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
+                 "Emit report: mod=0x%02X keys=[0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X]",
+                 kb_report[0], kb_report[2], kb_report[3], kb_report[4],
+                 kb_report[5], kb_report[6], kb_report[7]);
+  }
+
+#ifdef CONFIG_M4G_ENABLE_DUPLICATE_SUPPRESSION
+  bool kb_changed = (!s_have_kb) || (memcmp(s_last_kb_report, kb_report, sizeof(kb_report)) != 0);
+#else
+  bool kb_changed = true;
+#endif
+
+  if (kb_changed)
+  {
+    if (m4g_ble_send_keyboard_report(kb_report))
+    {
+      memcpy(s_last_kb_report, kb_report, sizeof(kb_report));
+      s_have_kb = true;
+      ++s_kb_sent;
+    }
+    else
+    {
+      LOG_AND_SAVE(true, E, BRIDGE_TAG, "Keyboard report failed (conn=%d notify=%d)",
+                   m4g_ble_is_connected(), m4g_ble_notifications_enabled());
+    }
+  }
+  else if (ENABLE_DEBUG_KEYPRESS_LOGGING)
+  {
+    LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, D, BRIDGE_TAG, "Duplicate keyboard report suppressed");
+  }
+
+#ifdef CONFIG_M4G_ENABLE_ARROW_MOUSE
+  if (allow_mouse)
+  {
+    if (mx > 127)
+      mx = 127;
+    else if (mx < -127)
+      mx = -127;
+    if (my > 127)
+      my = 127;
+    else if (my < -127)
+      my = -127;
+
+    if (mx || my)
+    {
+      uint8_t mouse[3] = {0};
+      mouse[1] = (uint8_t)mx;
+      mouse[2] = (uint8_t)my;
+#ifdef CONFIG_M4G_ENABLE_DUPLICATE_SUPPRESSION
+      bool mouse_changed = (!s_have_mouse) || (memcmp(s_last_mouse_report, mouse, sizeof(mouse)) != 0);
+#else
+      bool mouse_changed = true;
+#endif
+      if (mouse_changed)
+      {
+        if (m4g_ble_send_mouse_report(mouse))
+        {
+          memcpy(s_last_mouse_report, mouse, sizeof(mouse));
+          s_have_mouse = true;
+          ++s_mouse_sent;
+        }
+        else
+        {
+          LOG_AND_SAVE(true, W, BRIDGE_TAG, "Mouse report failed (conn=%d notify=%d)",
+                       m4g_ble_is_connected(), m4g_ble_notifications_enabled());
+        }
+      }
+      else if (ENABLE_DEBUG_KEYPRESS_LOGGING)
+      {
+        LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, D, BRIDGE_TAG, "Duplicate mouse report suppressed");
+      }
+    }
+  }
+#else
+  (void)allow_mouse;
+  (void)mx;
+  (void)my;
+#endif
+}
+
+static void send_buffered_single_key(void)
+{
+  bool have_key = (s_chord_buffer_len > 0);
+  bool have_modifier = (s_chord_buffer_modifiers != 0);
+  if (!have_key && !have_modifier)
+    return;
+
+  uint8_t keys[6] = {0};
+  if (have_key)
+    keys[0] = s_chord_buffer[0];
+
+  if (ENABLE_DEBUG_KEYPRESS_LOGGING)
+  {
+    LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
+                 "Single-key fallback: mod=0x%02X key=0x%02X", s_chord_buffer_modifiers, keys[0]);
+  }
+
+  emit_keyboard_state(s_chord_buffer_modifiers, keys, false, 0, 0);
+  uint8_t empty[6] = {0};
+  emit_keyboard_state(0, empty, false, 0, 0);
+}
+
+static void process_combined_state(const combined_state_t *state)
+{
+  TickType_t now = xTaskGetTickCount();
+  bool has_keys = (state->key_count > 0) || (state->modifiers != 0);
+#ifdef CONFIG_M4G_ENABLE_ARROW_MOUSE
+  bool has_activity = has_keys || (state->mouse_dx != 0) || (state->mouse_dy != 0);
+#else
+  bool has_activity = has_keys;
+#endif
+
+  switch (s_chord_state)
+  {
+  case CHORD_STATE_IDLE:
+    if (has_activity)
+    {
+      chord_buffer_reset();
+      chord_buffer_add(state);
+      s_chord_state = CHORD_STATE_COLLECTING;
+      if (ENABLE_DEBUG_KEYPRESS_LOGGING)
+      {
+        LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG, "Chord collecting started (keys=%u)", (unsigned)state->key_count);
+      }
+    }
+    break;
+
+  case CHORD_STATE_COLLECTING:
+    if (has_activity)
+    {
+      chord_buffer_add(state);
+    }
+    else
+    {
+      // Physical keys released
+      if (s_chord_buffer_len <= 1 && (s_chord_buffer_len > 0 || s_chord_buffer_modifiers != 0))
+      {
+        send_buffered_single_key();
+        s_chord_state = CHORD_STATE_IDLE;
+      }
+      else if (s_chord_buffer_len > 1)
+      {
+        s_expect_output_tick = now;
+        s_output_sequence_active = false;
+        s_chord_state = CHORD_STATE_EXPECTING_OUTPUT;
+        if (ENABLE_DEBUG_KEYPRESS_LOGGING)
+        {
+          LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG, "Chord released (%u keys) awaiting output", (unsigned)s_chord_buffer_len);
+        }
+      }
+      else
+      {
+        s_chord_state = CHORD_STATE_IDLE;
+      }
+      chord_buffer_reset();
+    }
+    break;
+
+  case CHORD_STATE_EXPECTING_OUTPUT:
+    if (has_activity)
+    {
+      TickType_t delta = now - s_expect_output_tick;
+      if (delta <= pdMS_TO_TICKS(M4G_CHORD_OUTPUT_GRACE_MS))
+      {
+        s_chord_state = CHORD_STATE_PASSING_OUTPUT;
+        s_output_sequence_active = true;
+        emit_keyboard_state(state->modifiers, state->keys, true,
+#ifdef CONFIG_M4G_ENABLE_ARROW_MOUSE
+                            state->mouse_dx, state->mouse_dy
+#else
+                            0, 0
+#endif
+        );
+      }
+      else
+      {
+        // Treat as a new chord start if the gap exceeded grace window
+        chord_buffer_reset();
+        chord_buffer_add(state);
+        s_chord_state = CHORD_STATE_COLLECTING;
+        if (ENABLE_DEBUG_KEYPRESS_LOGGING)
+        {
+          LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, W, BRIDGE_TAG, "No chord output within grace window; restarting collection");
+        }
+      }
+    }
+    else if (s_output_sequence_active && (now - s_expect_output_tick) > pdMS_TO_TICKS(M4G_CHORD_OUTPUT_GRACE_MS))
+    {
+      s_chord_state = CHORD_STATE_IDLE;
+      s_output_sequence_active = false;
+    }
+    break;
+
+  case CHORD_STATE_PASSING_OUTPUT:
+    emit_keyboard_state(state->modifiers, state->keys, true,
+#ifdef CONFIG_M4G_ENABLE_ARROW_MOUSE
+                        state->mouse_dx, state->mouse_dy
+#else
+                        0, 0
+#endif
+    );
+    if (!has_activity)
+    {
+      s_expect_output_tick = now;
+      s_chord_state = CHORD_STATE_EXPECTING_OUTPUT;
+    }
+    break;
+  }
 }
 
 void m4g_bridge_get_stats(m4g_bridge_stats_t *out)
@@ -81,10 +438,21 @@ bool m4g_bridge_get_last_mouse(uint8_t out[3])
   return true;
 }
 
-void m4g_bridge_process_usb_report(const uint8_t *report, size_t len)
+void m4g_bridge_process_usb_report(uint8_t slot, const uint8_t *report, size_t len)
 {
   if (!report || len == 0)
     return;
+
+  if (slot >= M4G_BRIDGE_MAX_SLOTS)
+  {
+    if (!s_warned_invalid_slot)
+    {
+      LOG_AND_SAVE(true, W, BRIDGE_TAG, "Ignoring report for invalid slot %u", slot);
+      s_warned_invalid_slot = true;
+    }
+    return;
+  }
+
   const uint8_t *kb_payload = NULL;
   size_t kb_len = 0;
 
@@ -100,148 +468,55 @@ void m4g_bridge_process_usb_report(const uint8_t *report, size_t len)
     kb_len = len;
   }
   else
-    return;
-
-  uint8_t new_keys[6] = {0};
-  size_t nk = extract_chara_keys(kb_payload, kb_len, new_keys);
-
-  // Debug: Always log what keys we extracted
-  if (nk > 0)
   {
-    LOG_AND_SAVE(true, I, BRIDGE_TAG, "Extracted %zu keys: 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X", 
-                 nk, new_keys[0], new_keys[1], new_keys[2], new_keys[3], new_keys[4], new_keys[5]);
-  }
-
-  // Arrow to mouse mapping (optional)
-  int mx = 0, my = 0;
-#ifdef CONFIG_M4G_ENABLE_ARROW_MOUSE
-  for (size_t i = 0; i < nk; ++i)
-  {
-    LOG_AND_SAVE(true, I, BRIDGE_TAG, "Checking key[%zu] = 0x%02X for mouse mapping", i, new_keys[i]);
-    switch (new_keys[i])
+    if (ENABLE_DEBUG_KEYPRESS_LOGGING)
     {
-    // CharaChorder mouse movement keys (based on your logs)
-    case 0x29: // Escape - Mouse Up
-      my -= 10;
-      LOG_AND_SAVE(true, I, BRIDGE_TAG, "*** MOUSE UP: 0x29 (Escape) ***");
-      break;
-    case 0x08: // Backspace - Mouse Down  
-      my += 10;
-      LOG_AND_SAVE(true, I, BRIDGE_TAG, "*** MOUSE DOWN: 0x08 (Backspace) ***");
-      break;
-    case 0x38: // Forward Slash - Mouse Left
-      mx -= 10;
-      LOG_AND_SAVE(true, I, BRIDGE_TAG, "*** MOUSE LEFT: 0x38 (/) ***");
-      break;
-    case 0x2E: // Period - Mouse Right
-      mx += 10;
-      LOG_AND_SAVE(true, I, BRIDGE_TAG, "*** MOUSE RIGHT: 0x2E (.) ***");
-      break;
-    
-    // Standard arrow keys for cursor movement (keep these for cursor)
-    case 0x4F: // Right Arrow - don't convert to mouse
-    case 0x50: // Left Arrow
-    case 0x51: // Down Arrow
-    case 0x52: // Up Arrow
-      // Let these pass through as normal cursor keys
-      break;
-    default:
-      break;
+      LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, W, BRIDGE_TAG, "Slot %u report too short (len=%zu)", slot, len);
     }
+    return;
   }
 
-  // DUAL-FUNCTION: Mouse keys work for BOTH mouse movement AND keyboard input
-  // Keep all keys in keyboard report - mouse keys will also type their characters
-  size_t filtered_n = nk;  // Keep all keys, no filtering needed anymore
-  
+  bridge_slot_state_t *state = &s_slots[slot];
+  uint8_t slot_keys[6] = {0};
+  size_t key_count = extract_chara_keys(kb_payload, kb_len, slot_keys);
+
+  state->present = true;
+  state->modifiers = (kb_len >= 1) ? kb_payload[0] : 0;
+  memset(state->keys, 0, sizeof(state->keys));
+  if (key_count > 0)
+    memcpy(state->keys, slot_keys, key_count);
+
   if (ENABLE_DEBUG_KEYPRESS_LOGGING)
   {
-    LOG_AND_SAVE(true, I, TAG, "Dual-function: Mouse keys will generate BOTH mouse movement AND keyboard input");
+    LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
+                 "Slot %u update: mod=0x%02X keys=[0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X]",
+                 slot, state->modifiers,
+                 state->keys[0], state->keys[1], state->keys[2],
+                 state->keys[3], state->keys[4], state->keys[5]);
   }
-  nk = filtered_n;
-  if (nk < 6)
-    memset(&new_keys[nk], 0, (6 - nk) * sizeof(uint8_t));
-#endif
 
-  update_active_keys(new_keys, nk);
+  combined_state_t combined;
+  compute_combined_state(&combined);
+  process_combined_state(&combined);
+}
 
-  // Build standard 8-byte keyboard HID report
-  uint8_t kb_report[8] = {0};
-  kb_report[0] = (kb_len >= 1) ? kb_payload[0] : 0;
-  kb_report[1] = 0; // reserved
+void m4g_bridge_reset_slot(uint8_t slot)
+{
+  if (slot >= M4G_BRIDGE_MAX_SLOTS)
+    return;
 
-  // Use cached active keys (non-zero entries) to populate HID slots
-  memcpy(&kb_report[2], s_active_keys, 6);
-
-  // Enhanced logging for keyboard report debugging
-  LOG_AND_SAVE(true, I, TAG, "*** KEYBOARD REPORT: mod=0x%02X keys=[0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X]", 
-               kb_report[0], kb_report[2], kb_report[3], kb_report[4], kb_report[5], kb_report[6], kb_report[7]);
-
-  // Suppress duplicate consecutive keyboard reports to save BLE airtime (optional)
-#ifdef CONFIG_M4G_ENABLE_DUPLICATE_SUPPRESSION
-  bool kb_changed = (!s_have_kb) || (memcmp(s_last_kb_report, kb_report, 8) != 0);
-#else
-  bool kb_changed = true;
-#endif
-  
-  LOG_AND_SAVE(true, I, TAG, "*** Keyboard changed: %s, sending keyboard report ***", kb_changed ? "YES" : "NO");
-  
-  if (kb_changed)
+  if (ENABLE_DEBUG_KEYPRESS_LOGGING)
   {
-    if (m4g_ble_send_keyboard_report(kb_report))
-    {
-      LOG_AND_SAVE(true, I, TAG, "*** KEYBOARD REPORT SENT SUCCESSFULLY ***");
-      memcpy(s_last_kb_report, kb_report, 8);
-      s_have_kb = true;
-      ++s_kb_sent;
-    }
-    else 
-    {
-      LOG_AND_SAVE(true, E, TAG, "*** KEYBOARD REPORT FAILED TO SEND ***");
-    }
-    else if (ENABLE_DEBUG_KEYPRESS_LOGGING)
-    {
-      LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, W, BRIDGE_TAG, "BLE send dropped (conn=%d notify=%d)", m4g_ble_is_connected(), m4g_ble_notifications_enabled());
-    }
+    LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG, "Resetting slot %u", slot);
   }
+  chord_buffer_reset();
+  s_chord_state = CHORD_STATE_IDLE;
+  s_expect_output_tick = xTaskGetTickCount();
 
-  // Send proper mouse HID reports for detected mouse movement
-  if (mx > 127)
-    mx = 127;
-  else if (mx < -127)
-    mx = -127;
-  if (my > 127)
-    my = 127;
-  else if (my < -127)
-    my = -127;
-  if (mx || my)
-  {
-    LOG_AND_SAVE(true, I, BRIDGE_TAG, "*** Preparing to send mouse report: x=%d y=%d ***", mx, my);
-    uint8_t mouse[3] = {0};
-    mouse[1] = (uint8_t)mx;
-    mouse[2] = (uint8_t)my;
-    bool mouse_changed = true;
-#ifdef CONFIG_M4G_ENABLE_DUPLICATE_SUPPRESSION
-    mouse_changed = (!s_have_mouse) || (memcmp(s_last_mouse_report, mouse, 3) != 0);
-#endif
-    if (mouse_changed)
-    {
-      LOG_AND_SAVE(true, I, BRIDGE_TAG, "*** Sending mouse report via BLE ***");
-      if (m4g_ble_send_mouse_report(mouse))
-      {
-        memcpy(s_last_mouse_report, mouse, 3);
-        s_have_mouse = true;
-        ++s_mouse_sent;
-        LOG_AND_SAVE(true, I, BRIDGE_TAG, "*** MOUSE REPORT SENT SUCCESSFULLY ***");
-      }
-      else 
-      {
-        LOG_AND_SAVE(true, W, BRIDGE_TAG, "*** MOUSE REPORT FAILED *** (conn=%d notify=%d)", m4g_ble_is_connected(), m4g_ble_notifications_enabled());
-      }
-    }
-    else
-    {
-      LOG_AND_SAVE(true, I, BRIDGE_TAG, "Mouse report unchanged, not sending");
-    }
-  }
+  memset(s_slots[slot].keys, 0, sizeof(s_slots[slot].keys));
+  s_slots[slot].modifiers = 0;
+  s_slots[slot].present = false;
+
+  uint8_t empty_keys[6] = {0};
+  emit_keyboard_state(0, empty_keys, false, 0, 0);
 }

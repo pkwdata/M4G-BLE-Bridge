@@ -182,6 +182,21 @@ config M4G_USB_DEBOUNCE_DELAY_MS
 		Delay after USB device detection before attempting enumeration.
 		Helps with device stability during connection.
 
+config M4G_USB_CHARACHORDER_VENDOR_ID
+	hex "CharaChorder HID vendor ID"
+	default 0x303A
+	help
+		USB vendor ID used by CharaChorder halves. When combined with detection of the
+		built-in hub, this enables the bridge to require both halves before reporting
+		the USB side as connected. Set to 0 to disable automatic detection.
+
+config M4G_USB_CHARACHORDER_PRODUCT_ID
+	hex "CharaChorder HID product ID"
+	default 0xFFFF
+	help
+		USB product ID used by CharaChorder halves. Set to 0xFFFF to treat the product
+		ID as a wildcard (any product belonging to the specified vendor).
+
 config M4G_BLE_DEVICE_NAME
 	string "BLE device name"
 	default "M4G-BLE-Bridge"

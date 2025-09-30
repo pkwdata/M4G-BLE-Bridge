@@ -14,10 +14,10 @@
 // LOG_TAG removed (was unused) to silence -Wunused-variable warning
 
 // Internal debug flags (can later be loaded from NVS or menuconfig)
-bool ENABLE_DEBUG_LED_LOGGING = false;
-bool ENABLE_DEBUG_USB_LOGGING = false;
+bool ENABLE_DEBUG_LED_LOGGING = true;
+bool ENABLE_DEBUG_USB_LOGGING = true;
 bool ENABLE_DEBUG_BLE_LOGGING = true;
-bool ENABLE_DEBUG_KEYPRESS_LOGGING = false;
+bool ENABLE_DEBUG_KEYPRESS_LOGGING = true;
 
 #if CONFIG_M4G_LOG_PERSISTENCE
 #define NVS_LOG_NAMESPACE "logbuf"

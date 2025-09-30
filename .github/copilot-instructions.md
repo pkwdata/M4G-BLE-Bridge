@@ -42,7 +42,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 // In main.c - toggle these for different subsystems
 m4g_log_enable_usb(true);    // USB enumeration/reports
 m4g_log_enable_keypress(true); // Key translation 
-m4g_log_enable_ble(false);    // BLE stack (very verbose)
+m4g_log_enable_ble(true);    // BLE stack (very verbose)
 ```
 
 ## Project-Specific Conventions

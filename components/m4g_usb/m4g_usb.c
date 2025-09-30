@@ -31,10 +31,17 @@ static const char *USB_TAG = "M4G-USB";
 #define USB_HOST_PRIORITY 20
 #define USB_HOST_TASK_STACK_SIZE 4096
 
+#define USB_CHARACHORDER_HUB_VID 0x1A40
+#define USB_CHARACHORDER_HUB_PID 0x0101
+#define USB_DUAL_HID_PRODUCT_WILDCARD 0xFFFF
+
 static usb_host_client_handle_t s_client = NULL;
 static m4g_usb_hid_report_cb_t s_hid_cb = NULL;
 static uint8_t s_active_hid_devices = 0;
 static bool s_rescan_requested = false;
+static bool s_seen_charachorder_hub = false;
+static bool s_charachorder_mode = false;
+static uint8_t s_required_hid_devices = 1;
 
 // HID device representation (mirrors prior main.c struct)
 typedef struct
@@ -44,16 +51,93 @@ typedef struct
   uint8_t dev_addr;
   uint8_t intf_num;
   uint8_t ep_addr;
+  uint8_t slot;
   bool active;
   char device_name[32];
   bool transfer_started;
   bool interface_claimed;
   usb_transfer_t *transfer;
+  uint16_t vid;
+  uint16_t pid;
+  uint8_t consecutive_errors;
+  TickType_t last_error_tick;
 } m4g_usb_hid_device_t;
 
-static m4g_usb_hid_device_t s_hid_devices[2];
+static m4g_usb_hid_device_t s_hid_devices[M4G_BRIDGE_MAX_SLOTS];
+#define M4G_USB_MAX_HID_DEVICES (sizeof(s_hid_devices) / sizeof(s_hid_devices[0]))
 static uint8_t s_claimed_device_count = 0;
 static bool s_restart_needed = false;
+
+static const char *transfer_status_to_str(usb_transfer_status_t status)
+{
+  switch (status)
+  {
+  case USB_TRANSFER_STATUS_COMPLETED:
+    return "completed";
+  case USB_TRANSFER_STATUS_ERROR:
+    return "error";
+  case USB_TRANSFER_STATUS_STALL:
+    return "stall";
+  case USB_TRANSFER_STATUS_NO_DEVICE:
+    return "no_device";
+  case USB_TRANSFER_STATUS_CANCELLED:
+    return "cancelled";
+  default:
+    return "unknown";
+  }
+}
+
+static int allocate_hid_slot(void)
+{
+  for (int i = 0; i < (int)M4G_USB_MAX_HID_DEVICES; ++i)
+  {
+    if (!s_hid_devices[i].active)
+      return i;
+  }
+  return -1;
+}
+
+static void update_usb_led_state(void);
+static void update_required_hid_devices(void);
+
+static void update_usb_led_state(void)
+{
+  m4g_led_set_usb_connected(s_active_hid_devices >= s_required_hid_devices && s_required_hid_devices > 0);
+}
+
+static void update_required_hid_devices(void)
+{
+#if CONFIG_M4G_USB_CHARACHORDER_VENDOR_ID != 0
+  bool detected_charachorder = false;
+  if (s_seen_charachorder_hub)
+  {
+    for (size_t i = 0; i < (sizeof(s_hid_devices) / sizeof(s_hid_devices[0])); ++i)
+    {
+      if (!s_hid_devices[i].active)
+        continue;
+      if (s_hid_devices[i].vid != CONFIG_M4G_USB_CHARACHORDER_VENDOR_ID)
+        continue;
+      if (CONFIG_M4G_USB_CHARACHORDER_PRODUCT_ID != USB_DUAL_HID_PRODUCT_WILDCARD && s_hid_devices[i].pid != CONFIG_M4G_USB_CHARACHORDER_PRODUCT_ID)
+        continue;
+      detected_charachorder = true;
+      break;
+    }
+  }
+#else
+  bool detected_charachorder = false;
+#endif
+
+  bool previous_mode = s_charachorder_mode;
+  s_charachorder_mode = detected_charachorder;
+  s_required_hid_devices = s_charachorder_mode ? 2 : 1;
+
+  if (ENABLE_DEBUG_USB_LOGGING && previous_mode != s_charachorder_mode)
+  {
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "Dual-HID requirement %s", s_charachorder_mode ? "ENABLED (CharaChorder detected)" : "DISABLED");
+  }
+
+  update_usb_led_state();
+}
 
 // Forward declarations
 static void usb_host_client_event_cb(const usb_host_client_event_msg_t *event_msg, void *arg);
@@ -62,7 +146,7 @@ static void setup_hid_transfers(void);
 static void hid_transfer_callback(usb_transfer_t *transfer);
 static bool enum_filter_cb(const usb_device_desc_t *dev_desc, uint8_t *bConfigurationValue);
 
-bool m4g_usb_is_connected(void) { return s_active_hid_devices > 0; }
+bool m4g_usb_is_connected(void) { return s_required_hid_devices > 0 && s_active_hid_devices >= s_required_hid_devices; }
 uint8_t m4g_usb_active_hid_count(void) { return s_active_hid_devices; }
 void m4g_usb_request_rescan(void) { s_rescan_requested = true; }
 
@@ -93,15 +177,26 @@ static void usb_host_unified_task(void *arg)
     {
       usb_host_client_handle_events(s_client, 0); // non-blocking
     }
+
+    if (s_rescan_requested)
+    {
+      s_rescan_requested = false;
+      setup_hid_transfers();
+    }
   }
 }
 
 static bool enum_filter_cb(const usb_device_desc_t *dev_desc, uint8_t *bConfigurationValue)
 {
   LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "Enum filter: VID=0x%04X, PID=0x%04X, Class=0x%02X", dev_desc->idVendor, dev_desc->idProduct, dev_desc->bDeviceClass);
-  if (dev_desc->idVendor == 0x1A40 && dev_desc->idProduct == 0x0101)
+  if (dev_desc->idVendor == USB_CHARACHORDER_HUB_VID && dev_desc->idProduct == USB_CHARACHORDER_HUB_PID)
   {
     *bConfigurationValue = 1;
+    s_seen_charachorder_hub = true;
+    if (ENABLE_DEBUG_USB_LOGGING)
+    {
+      LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "Detected CharaChorder hub VID=0x%04X PID=0x%04X", dev_desc->idVendor, dev_desc->idProduct);
+    }
     return true;
   }
   if (dev_desc->bDeviceClass == 0x09)
@@ -120,10 +215,14 @@ static bool enum_filter_cb(const usb_device_desc_t *dev_desc, uint8_t *bConfigur
 
 static void cleanup_all_devices(void)
 {
-  for (int i = 0; i < 2; ++i)
+  usb_device_handle_t closed_handles[M4G_USB_MAX_HID_DEVICES] = {0};
+  uint8_t closed_count = 0;
+  for (int i = 0; i < (int)M4G_USB_MAX_HID_DEVICES; ++i)
   {
     if (s_hid_devices[i].active)
     {
+      if (s_hid_devices[i].slot != M4G_INVALID_SLOT)
+        m4g_bridge_reset_slot(s_hid_devices[i].slot);
       if (s_hid_devices[i].transfer)
       {
         usb_host_transfer_free(s_hid_devices[i].transfer);
@@ -135,14 +234,34 @@ static void cleanup_all_devices(void)
       }
       if (s_hid_devices[i].dev_hdl)
       {
-        usb_host_device_close(s_client, s_hid_devices[i].dev_hdl);
+        bool already_closed = false;
+        for (uint8_t j = 0; j < closed_count; ++j)
+        {
+          if (closed_handles[j] == s_hid_devices[i].dev_hdl)
+          {
+            already_closed = true;
+            break;
+          }
+        }
+        if (!already_closed)
+        {
+          usb_host_device_close(s_client, s_hid_devices[i].dev_hdl);
+          if (closed_count < 2)
+          {
+            closed_handles[closed_count++] = s_hid_devices[i].dev_hdl;
+          }
+        }
       }
       memset(&s_hid_devices[i], 0, sizeof(s_hid_devices[i]));
+      s_hid_devices[i].slot = M4G_INVALID_SLOT;
     }
   }
   s_active_hid_devices = 0;
   s_claimed_device_count = 0;
-  m4g_led_set_usb_connected(false);
+  s_seen_charachorder_hub = false;
+  s_charachorder_mode = false;
+  s_required_hid_devices = 1;
+  update_usb_led_state();
 }
 
 static void usb_host_client_event_cb(const usb_host_client_event_msg_t *event_msg, void *arg)
@@ -198,50 +317,75 @@ static void enumerate_device(uint8_t dev_addr)
   }
   const usb_intf_desc_t *intf_desc;
   int intf_offset = 0;
-  bool hid_claimed = false;
-  for (int i = 0; i < cfg->bNumInterfaces && !hid_claimed; ++i)
+  uint8_t hid_claims_on_device = 0;
+  for (int i = 0; i < cfg->bNumInterfaces && s_claimed_device_count < M4G_USB_MAX_HID_DEVICES; ++i)
   {
     intf_desc = usb_parse_interface_descriptor(cfg, i, 0, &intf_offset);
     if (!intf_desc)
       continue;
-    if (intf_desc->bInterfaceClass == USB_CLASS_HID && s_active_hid_devices < 2)
+    if (intf_desc->bInterfaceClass == USB_CLASS_HID && s_claimed_device_count < M4G_USB_MAX_HID_DEVICES)
     {
       if (usb_host_interface_claim(s_client, dev_hdl, intf_desc->bInterfaceNumber, 0) == ESP_OK)
       {
+        int ep_offset = intf_offset;
         const usb_ep_desc_t *ep_desc = NULL;
         for (int ep = 0; ep < intf_desc->bNumEndpoints; ++ep)
         {
-          ep_desc = usb_parse_endpoint_descriptor_by_index(intf_desc, ep, cfg->wTotalLength, &intf_offset);
+          ep_desc = usb_parse_endpoint_descriptor_by_index(intf_desc, ep, cfg->wTotalLength, &ep_offset);
           if (ep_desc && (ep_desc->bmAttributes & USB_BM_ATTRIBUTES_XFERTYPE_MASK) == USB_BM_ATTRIBUTES_XFER_INT && (ep_desc->bEndpointAddress & USB_B_ENDPOINT_ADDRESS_EP_DIR_MASK))
             break;
         }
-        m4g_usb_hid_device_t *dev = &s_hid_devices[s_active_hid_devices];
+        int slot = allocate_hid_slot();
+        if (slot < 0)
+        {
+          LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, W, USB_TAG, "No free HID slots for interface %d", intf_desc->bInterfaceNumber);
+          usb_host_interface_release(s_client, dev_hdl, intf_desc->bInterfaceNumber);
+          continue;
+        }
+        m4g_usb_hid_device_t *dev = &s_hid_devices[slot];
+        memset(dev, 0, sizeof(*dev));
+        dev->slot = (uint8_t)slot;
         dev->dev_hdl = dev_hdl;
         dev->client_handle = s_client;
         dev->dev_addr = dev_addr;
         dev->intf_num = intf_desc->bInterfaceNumber;
         dev->ep_addr = ep_desc ? ep_desc->bEndpointAddress : 0;
+        dev->transfer = NULL;
         dev->active = true;
         dev->interface_claimed = true;
-        dev->transfer = NULL;
-        snprintf(dev->device_name, sizeof(dev->device_name), "HID_%d", dev_addr);
+        dev->vid = dev_desc->idVendor;
+        dev->pid = dev_desc->idProduct;
+        snprintf(dev->device_name, sizeof(dev->device_name), "HID_%d_IF%d", dev_addr, intf_desc->bInterfaceNumber);
         ++s_active_hid_devices;
         ++s_claimed_device_count;
-        hid_claimed = true;
-        LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "Stored HID dev addr=%d ep=0x%02X active=%d", dev_addr, dev->ep_addr, s_active_hid_devices);
+        ++hid_claims_on_device;
+        m4g_bridge_reset_slot(dev->slot);
+        LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "Stored HID slot=%d addr=%d VID=0x%04X PID=0x%04X ep=0x%02X active=%d",
+                     slot, dev_addr, dev->vid, dev->pid, dev->ep_addr, s_active_hid_devices);
         if (!dev->ep_addr)
         {
           usb_host_interface_release(s_client, dev_hdl, dev->intf_num);
           dev->interface_claimed = false;
           dev->active = false;
+          dev->vid = 0;
+          dev->pid = 0;
+          if (dev->slot != M4G_INVALID_SLOT)
+            m4g_bridge_reset_slot(dev->slot);
+          dev->slot = M4G_INVALID_SLOT;
           --s_active_hid_devices;
           --s_claimed_device_count;
-          hid_claimed = false;
+          if (hid_claims_on_device > 0)
+            --hid_claims_on_device;
+          update_required_hid_devices();
+        }
+        else
+        {
+          update_required_hid_devices();
         }
       }
     }
   }
-  if (!hid_claimed)
+  if (hid_claims_on_device == 0)
   {
     usb_host_device_close(s_client, dev_hdl);
   }
@@ -254,37 +398,94 @@ static void enumerate_device(uint8_t dev_addr)
 static void hid_transfer_callback(usb_transfer_t *transfer)
 {
   m4g_usb_hid_device_t *dev = (m4g_usb_hid_device_t *)transfer->context;
+  if (!dev)
+    return;
+
+  bool should_resubmit = true;
   if (transfer->status == USB_TRANSFER_STATUS_COMPLETED)
   {
     if (ENABLE_DEBUG_KEYPRESS_LOGGING)
     {
-      LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, USB_TAG, "HID report dev=%s %d bytes", dev->device_name, transfer->actual_num_bytes);
+      LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, USB_TAG, "HID report dev=%s slot=%d %d bytes", dev->device_name, dev->slot, transfer->actual_num_bytes);
       ESP_LOG_BUFFER_HEX_LEVEL(USB_TAG, transfer->data_buffer, transfer->actual_num_bytes, ESP_LOG_INFO);
     }
+    dev->consecutive_errors = 0;
     // Removed unused kb_report buffer (was unused after delegation to bridge)
     if (transfer->actual_num_bytes > 0)
     {
       // Delegate raw report to bridge (which will emit BLE reports as needed)
-      m4g_bridge_process_usb_report(transfer->data_buffer, transfer->actual_num_bytes);
+      if (dev->slot != M4G_INVALID_SLOT)
+      {
+        m4g_bridge_process_usb_report(dev->slot, transfer->data_buffer, transfer->actual_num_bytes);
+      }
+      else if (ENABLE_DEBUG_USB_LOGGING)
+      {
+        LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, W, USB_TAG, "Dropping HID report with invalid slot (dev=%s)", dev->device_name);
+      }
     }
   }
   else
   {
-    LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, W, USB_TAG, "Transfer error status=%d", transfer->status);
+    const char *status_name = transfer_status_to_str(transfer->status);
+    LOG_AND_SAVE(true, W, USB_TAG, "Transfer issue dev=%s slot=%d status=%s(%d)", dev->device_name, dev->slot, status_name, transfer->status);
+
+    TickType_t now = xTaskGetTickCount();
+    if (now - dev->last_error_tick > pdMS_TO_TICKS(250))
+    {
+      dev->consecutive_errors = 0;
+    }
+    dev->last_error_tick = now;
+    dev->consecutive_errors++;
+
+    bool request_rescan = false;
+    switch (transfer->status)
+    {
+    case USB_TRANSFER_STATUS_NO_DEVICE:
+    case USB_TRANSFER_STATUS_CANCELLED:
+      request_rescan = true;
+      break;
+    case USB_TRANSFER_STATUS_ERROR:
+    case USB_TRANSFER_STATUS_STALL:
+    default:
+      if (dev->consecutive_errors >= 2)
+      {
+        request_rescan = true;
+      }
+      break;
+    }
+
+    if (request_rescan)
+    {
+      if (dev->slot != M4G_INVALID_SLOT)
+      {
+        m4g_bridge_reset_slot(dev->slot);
+      }
+      usb_host_transfer_free(transfer);
+      dev->transfer_started = false;
+      dev->transfer = NULL;
+      dev->consecutive_errors = 0;
+      s_rescan_requested = true;
+      should_resubmit = false;
+    }
   }
+  if (!should_resubmit)
+    return;
+
+  transfer->num_bytes = transfer->num_bytes ? transfer->num_bytes : 64;
   vTaskDelay(pdMS_TO_TICKS(1));
   if (usb_host_transfer_submit(transfer) != ESP_OK)
   {
     usb_host_transfer_free(transfer);
     dev->transfer_started = false;
     dev->transfer = NULL;
+    s_rescan_requested = true;
   }
 }
 
 static void setup_hid_transfers(void)
 {
   LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "Setting up transfers for %d devices", s_active_hid_devices);
-  for (int i = 0; i < s_active_hid_devices; i++)
+  for (int i = 0; i < (int)M4G_USB_MAX_HID_DEVICES; ++i)
   {
     m4g_usb_hid_device_t *dev = &s_hid_devices[i];
     if (!dev->active || dev->ep_addr == 0 || dev->transfer_started)
@@ -309,10 +510,14 @@ static void setup_hid_transfers(void)
       dev->transfer = t;
     }
   }
-  if (s_active_hid_devices > 0)
+  update_usb_led_state();
+  if (s_active_hid_devices >= s_required_hid_devices)
   {
-    m4g_led_set_usb_connected(true);
-    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "USB fully connected");
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "USB HID ready (active=%d required=%d)", s_active_hid_devices, s_required_hid_devices);
+  }
+  else
+  {
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "Waiting for additional HID devices (active=%d required=%d)", s_active_hid_devices, s_required_hid_devices);
   }
 }
 
@@ -322,6 +527,11 @@ esp_err_t m4g_usb_init(const m4g_usb_config_t *cfg, m4g_usb_hid_report_cb_t cb)
 {
   (void)cfg;
   s_hid_cb = cb;
+
+  for (int i = 0; i < (int)M4G_USB_MAX_HID_DEVICES; ++i)
+  {
+    s_hid_devices[i].slot = M4G_INVALID_SLOT;
+  }
 
 #if CONFIG_M4G_VBUS_ENABLE_GPIO >= 0
   // Enable VBUS switch if configured

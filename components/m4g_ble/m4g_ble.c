@@ -17,7 +17,10 @@
 #include "host/util/util.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
-#include "host/ble_store.h" // for ble_store_config_init / ble_store_util_status_rr
+#include "host/ble_store.h" // for ble_store_util_status_rr
+#if CONFIG_BT_NIMBLE_NVS_PERSIST
+#include "host/ble_store_config.h"
+#endif
 
 // Ensure boolean types are available for IntelliSense
 #ifndef __cplusplus
@@ -34,10 +37,6 @@
 
 // Forward declare USB helper if its header is not already included here
 extern uint8_t m4g_usb_active_hid_count(void);
-
-// Some ESP-IDF/NimBLE header variants may not declare this unless certain
-// persistence options are enabled; provide a prototype to avoid implicit warning.
-void ble_store_config_init(void);
 
 static const char *BLE_TAG = "M4G-BLE";
 
@@ -387,7 +386,10 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg)
   case BLE_GAP_EVENT_SUBSCRIBE:
     if (ENABLE_DEBUG_BLE_LOGGING)
     {
-      LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG, "Subscribe event handle=0x%04X cur_notify=%d cur_indicate=%d", event->subscribe.attr_handle, event->subscribe.cur_notify, event->subscribe.cur_indicate);
+      LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG,
+                   "Subscribe attr=0x%04X cur_notify=%d cur_indicate=%d (report=0x%04X boot=0x%04X)",
+                   event->subscribe.attr_handle, event->subscribe.cur_notify, event->subscribe.cur_indicate,
+                   s_report_chr_handle, s_boot_report_chr_handle);
     }
     if (event->subscribe.attr_handle == s_report_chr_handle)
     {
@@ -473,11 +475,12 @@ esp_err_t m4g_ble_init(void)
     LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, E, BLE_TAG, "add svcs rc=%d", irc);
   
   // Configure NVS storage for bonding keys BEFORE ble_store_config_init()
+#if CONFIG_BT_NIMBLE_NVS_PERSIST
   ble_hs_cfg.store_read_cb = ble_store_config_read;
   ble_hs_cfg.store_write_cb = ble_store_config_write;
   ble_hs_cfg.store_delete_cb = ble_store_config_delete;
   ble_store_config_init();
-  
+
   // Optional: Clear bonding data if there were persistent connection issues
   // This can be enabled manually when needed rather than every boot
 #ifdef CONFIG_M4G_CLEAR_BONDING_ON_BOOT
@@ -486,6 +489,9 @@ esp_err_t m4g_ble_init(void)
 #else
   LOG_AND_SAVE(true, I, BLE_TAG, "BLE bonding initialized - existing bonds preserved");
 #endif
+#else
+  LOG_AND_SAVE(true, W, BLE_TAG, "CONFIG_BT_NIMBLE_NVS_PERSIST is disabled; BLE bonds will not survive reflashing");
+#endif
   
   nimble_port_freertos_init(host_task);
   discover_report_handles();
@@ -493,19 +499,21 @@ esp_err_t m4g_ble_init(void)
   return ESP_OK;
 }
 
-static bool notify_handle(uint16_t chr_handle, const uint8_t *report, size_t len)
+static int notify_handle(uint16_t chr_handle, const uint8_t *report, size_t len)
 {
+  if (chr_handle == 0 || !report || len == 0)
+    return BLE_HS_EINVAL;
+
   struct os_mbuf *om = ble_hs_mbuf_from_flat(report, len);
   if (!om)
-    return false;
+    return BLE_HS_ENOMEM;
+
   int rc = ble_gatts_notify_custom(s_conn_handle, chr_handle, om);
   if (rc != 0)
   {
-    LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, W, BLE_TAG, "notify handle 0x%04X failed rc=%d", chr_handle, rc);
     os_mbuf_free_chain(om);
-    return false;
   }
-  return true;
+  return rc;
 }
 
 static bool send_report_internal(uint8_t report_id, const uint8_t *report, size_t len, bool notify_boot)
@@ -515,42 +523,75 @@ static bool send_report_internal(uint8_t report_id, const uint8_t *report, size_
 
   bool sent = false;
 
-  if (s_report_notifications_enabled && s_report_chr_handle != 0)
+  uint8_t payload[65];
+  size_t payload_len = len + 1;
+  if (payload_len > sizeof(payload))
+    payload_len = sizeof(payload);
+  memset(payload, 0, payload_len);
+  payload[0] = report_id;
+  size_t copy_len = len;
+  if (copy_len > payload_len - 1)
+    copy_len = payload_len - 1;
+  memcpy(&payload[1], report, copy_len);
+
+  if (ENABLE_DEBUG_BLE_LOGGING)
   {
-    uint8_t payload[65];
-    size_t payload_len = len + 1;
-    if (payload_len > sizeof(payload))
-      payload_len = sizeof(payload);
-    memset(payload, 0, payload_len);
-    payload[0] = report_id;
-    size_t copy_len = len;
-    if (copy_len > payload_len - 1)
-      copy_len = payload_len - 1;
-    memcpy(&payload[1], report, copy_len);
-    
-    // Enhanced logging to debug what's actually being transmitted
-    LOG_AND_SAVE(true, I, BLE_TAG, "BLE TX: Report ID=%02X, len=%d, payload:", report_id, (int)payload_len);
-    for (size_t i = 0; i < payload_len; i++) {
-      ESP_LOGI(BLE_TAG, "  [%d] = 0x%02X", (int)i, payload[i]);
-    }
-    
-    sent |= notify_handle(s_report_chr_handle, payload, payload_len);
+    LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG,
+                 "Keyboard payload (id=0x%02X len=%d) -> report_handle=0x%04X enabled=%d boot_handle=0x%04X enabled=%d",
+                 report_id, (int)payload_len, s_report_chr_handle, s_report_notifications_enabled,
+                 s_boot_report_chr_handle, s_boot_notifications_enabled);
+    ESP_LOG_BUFFER_HEX_LEVEL(BLE_TAG, payload, payload_len, ESP_LOG_INFO);
   }
 
-  if (notify_boot && s_boot_notifications_enabled && s_boot_report_chr_handle != 0)
+  if (s_report_chr_handle != 0)
+  {
+    int rc = notify_handle(s_report_chr_handle, payload, payload_len);
+    if (rc == 0)
+    {
+      sent = true;
+    }
+    else if (rc != BLE_HS_ENOTCONN && rc != BLE_HS_ENOMEM)
+    {
+      LOG_AND_SAVE(true, W, BLE_TAG, "Report notify failed rc=%d handle=0x%04X", rc, s_report_chr_handle);
+    }
+    else if (ENABLE_DEBUG_BLE_LOGGING)
+    {
+      LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, W, BLE_TAG, "Report notify skipped rc=%d handle=0x%04X", rc, s_report_chr_handle);
+    }
+  }
+
+  if (notify_boot && s_boot_report_chr_handle != 0)
   {
     size_t boot_len = len;
     if (boot_len > 64)
       boot_len = 64;
-    sent |= notify_handle(s_boot_report_chr_handle, report, boot_len);
+    int rc = notify_handle(s_boot_report_chr_handle, report, boot_len);
+    if (rc == 0)
+    {
+      sent = true;
+    }
+    else if (rc != BLE_HS_ENOTCONN && rc != BLE_HS_ENOMEM)
+    {
+      LOG_AND_SAVE(true, W, BLE_TAG, "Boot notify failed rc=%d handle=0x%04X", rc, s_boot_report_chr_handle);
+    }
+    else if (ENABLE_DEBUG_BLE_LOGGING)
+    {
+      LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, W, BLE_TAG, "Boot notify skipped rc=%d handle=0x%04X", rc, s_boot_report_chr_handle);
+    }
   }
 
 #ifdef CONFIG_M4G_ASSERT_BLE_HANDLE
-  if (!sent && (s_report_notifications_enabled || (notify_boot && s_boot_notifications_enabled)))
+  if (!sent && (s_report_chr_handle != 0 || (notify_boot && s_boot_report_chr_handle != 0)))
   {
     assert(false && "Failed to notify any HID characteristic");
   }
 #endif
+
+  if (!sent)
+  {
+    LOG_AND_SAVE(true, W, BLE_TAG, "No HID notifications sent (report_handle=0x%04X boot_handle=0x%04X)",
+                 s_report_chr_handle, s_boot_report_chr_handle);
+  }
 
   return sent;
 }

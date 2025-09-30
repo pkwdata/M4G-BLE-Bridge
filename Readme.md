@@ -251,9 +251,10 @@ The CharaChorder (and potentially other advanced keyboards) can emit chorded or 
 
 1. Receives raw HID packets from `m4g_usb`
 2. Maintains an active key set / chord state
-3. Flattens chords into a standard boot keyboard report (modifier + 6 key slots)
-4. Optionally converts directional key groups (e.g. arrow keys) into relative mouse deltas (enabling rudimentary mouse-emulation) and forwards via `m4g_ble`
-5. Caches last sent keyboard & mouse reports to suppress redundant notifications
+3. Buffers physical chord presses until release so raw finger positions never leak over BLE; single-key presses are replayed automatically when no chord output follows
+4. Flattens emitted chords into standard boot keyboard reports (modifier + 6 key slots) and forwards them via `m4g_ble`
+5. Optionally converts directional key groups (e.g. arrow keys) into relative mouse deltas (enabling rudimentary mouse-emulation)
+6. Caches last sent keyboard & mouse reports to suppress redundant notifications
 
 This keeps USB acquisition and BLE transport unaware of device‑specific translation rules.
 
