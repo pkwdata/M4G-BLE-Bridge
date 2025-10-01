@@ -22,11 +22,17 @@
 static const char *BRIDGE_TAG = "M4G-BRIDGE";
 
 #define M4G_MAX_BUFFERED_KEYS 16
-#define M4G_CHORD_OUTPUT_GRACE_MS 15
+
+#ifndef CONFIG_M4G_CHARACHORDER_CHORD_DELAY_MS
+#define CONFIG_M4G_CHARACHORDER_CHORD_DELAY_MS 15
+#endif
+
+#define M4G_CHORD_OUTPUT_GRACE_MS CONFIG_M4G_CHARACHORDER_CHORD_DELAY_MS
 
 typedef struct
 {
   bool present;
+  bool is_charachorder;
   uint8_t modifiers;
   uint8_t keys[6];
 } bridge_slot_state_t;
@@ -40,12 +46,17 @@ static bool s_have_kb = false;
 static bool s_have_mouse = false;
 static uint32_t s_kb_sent = 0;
 static uint32_t s_mouse_sent = 0;
+static uint32_t s_chord_processed = 0;
+static uint32_t s_chord_delayed = 0;
+static bool s_charachorder_detected = false;
+static bool s_charachorder_both_halves = false;
 
 typedef struct
 {
   uint8_t modifiers;
   uint8_t keys[6];
   size_t key_count;
+  bool any_charachorder;
 #ifdef CONFIG_M4G_ENABLE_ARROW_MOUSE
   int mouse_dx;
   int mouse_dy;
@@ -69,6 +80,8 @@ static bool s_output_sequence_active = false;
 
 static void compute_combined_state(combined_state_t *state);
 static void process_combined_state(const combined_state_t *state);
+static bool chord_mode_enabled(void);
+static bool use_chord_for_state(const combined_state_t *state);
 static void emit_keyboard_state(uint8_t modifiers, const uint8_t keys[6], bool allow_mouse, int mx, int my);
 static void chord_buffer_reset(void);
 static void chord_buffer_add(const combined_state_t *state);
@@ -121,6 +134,30 @@ static void chord_buffer_add(const combined_state_t *state)
   }
 }
 
+static bool chord_mode_enabled(void)
+{
+#ifdef CONFIG_M4G_CHARACHORDER_RAW_MODE
+  if (CONFIG_M4G_CHARACHORDER_RAW_MODE)
+    return false;
+#endif
+  if (!s_charachorder_detected)
+    return false;
+#ifdef CONFIG_M4G_CHARACHORDER_REQUIRE_BOTH_HALVES
+  if (CONFIG_M4G_CHARACHORDER_REQUIRE_BOTH_HALVES && !s_charachorder_both_halves)
+    return false;
+#endif
+  return true;
+}
+
+static bool use_chord_for_state(const combined_state_t *state)
+{
+  if (!state)
+    return false;
+  if (!state->any_charachorder)
+    return false;
+  return chord_mode_enabled();
+}
+
 static void compute_combined_state(combined_state_t *state)
 {
   memset(state, 0, sizeof(*state));
@@ -132,6 +169,9 @@ static void compute_combined_state(combined_state_t *state)
   {
     if (!s_slots[slot].present)
       continue;
+
+    if (s_slots[slot].is_charachorder)
+      state->any_charachorder = true;
 
     state->modifiers |= s_slots[slot].modifiers;
     for (size_t i = 0; i < 6; ++i)
@@ -192,7 +232,36 @@ esp_err_t m4g_bridge_init(void)
   chord_buffer_reset();
   s_chord_state = CHORD_STATE_IDLE;
   s_expect_output_tick = xTaskGetTickCount();
+  s_charachorder_detected = false;
+  s_charachorder_both_halves = false;
+  s_warned_invalid_slot = false;
+  s_chord_processed = 0;
+  s_chord_delayed = 0;
   return ESP_OK;
+}
+
+void m4g_bridge_set_charachorder_status(bool detected, bool both_halves_connected)
+{
+  bool previous_detected = s_charachorder_detected;
+  s_charachorder_detected = detected;
+  s_charachorder_both_halves = both_halves_connected;
+
+  if (!detected)
+  {
+    chord_buffer_reset();
+    s_chord_state = CHORD_STATE_IDLE;
+  }
+
+  if (ENABLE_DEBUG_USB_LOGGING && (previous_detected != detected))
+  {
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, BRIDGE_TAG,
+                 "CharaChorder detection %s", detected ? "ENABLED" : "DISABLED");
+  }
+  if (ENABLE_DEBUG_USB_LOGGING && detected)
+  {
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, BRIDGE_TAG,
+                 "CharaChorder halves connected=%d", both_halves_connected);
+  }
 }
 
 static void emit_keyboard_state(uint8_t modifiers, const uint8_t keys[6], bool allow_mouse, int mx, int my)
@@ -308,6 +377,9 @@ static void send_buffered_single_key(void)
 
 static void process_combined_state(const combined_state_t *state)
 {
+  if (!state)
+    return;
+
   TickType_t now = xTaskGetTickCount();
   bool has_keys = (state->key_count > 0) || (state->modifiers != 0);
 #ifdef CONFIG_M4G_ENABLE_ARROW_MOUSE
@@ -315,6 +387,22 @@ static void process_combined_state(const combined_state_t *state)
 #else
   bool has_activity = has_keys;
 #endif
+
+  if (!use_chord_for_state(state))
+  {
+    chord_buffer_reset();
+    s_chord_state = CHORD_STATE_IDLE;
+    s_output_sequence_active = false;
+    s_expect_output_tick = now;
+    emit_keyboard_state(state->modifiers, state->keys, true,
+#ifdef CONFIG_M4G_ENABLE_ARROW_MOUSE
+                        state->mouse_dx, state->mouse_dy
+#else
+                        0, 0
+#endif
+    );
+    return;
+  }
 
   switch (s_chord_state)
   {
@@ -326,7 +414,8 @@ static void process_combined_state(const combined_state_t *state)
       s_chord_state = CHORD_STATE_COLLECTING;
       if (ENABLE_DEBUG_KEYPRESS_LOGGING)
       {
-        LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG, "Chord collecting started (keys=%u)", (unsigned)state->key_count);
+        LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
+                     "Chord collecting started (keys=%u)", (unsigned)state->key_count);
       }
     }
     break;
@@ -342,6 +431,7 @@ static void process_combined_state(const combined_state_t *state)
       if (s_chord_buffer_len <= 1 && (s_chord_buffer_len > 0 || s_chord_buffer_modifiers != 0))
       {
         send_buffered_single_key();
+        ++s_chord_processed;
         s_chord_state = CHORD_STATE_IDLE;
       }
       else if (s_chord_buffer_len > 1)
@@ -349,9 +439,11 @@ static void process_combined_state(const combined_state_t *state)
         s_expect_output_tick = now;
         s_output_sequence_active = false;
         s_chord_state = CHORD_STATE_EXPECTING_OUTPUT;
+        ++s_chord_delayed;
         if (ENABLE_DEBUG_KEYPRESS_LOGGING)
         {
-          LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG, "Chord released (%u keys) awaiting output", (unsigned)s_chord_buffer_len);
+          LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
+                       "Chord released (%u keys) awaiting output", (unsigned)s_chord_buffer_len);
         }
       }
       else
@@ -370,6 +462,7 @@ static void process_combined_state(const combined_state_t *state)
       {
         s_chord_state = CHORD_STATE_PASSING_OUTPUT;
         s_output_sequence_active = true;
+        ++s_chord_processed;
         emit_keyboard_state(state->modifiers, state->keys, true,
 #ifdef CONFIG_M4G_ENABLE_ARROW_MOUSE
                             state->mouse_dx, state->mouse_dy
@@ -386,7 +479,8 @@ static void process_combined_state(const combined_state_t *state)
         s_chord_state = CHORD_STATE_COLLECTING;
         if (ENABLE_DEBUG_KEYPRESS_LOGGING)
         {
-          LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, W, BRIDGE_TAG, "No chord output within grace window; restarting collection");
+          LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, W, BRIDGE_TAG,
+                       "No chord output within grace window; restarting collection");
         }
       }
     }
@@ -420,6 +514,8 @@ void m4g_bridge_get_stats(m4g_bridge_stats_t *out)
     return;
   out->keyboard_reports_sent = s_kb_sent;
   out->mouse_reports_sent = s_mouse_sent;
+  out->chord_reports_processed = s_chord_processed;
+  out->chord_reports_delayed = s_chord_delayed;
 }
 
 bool m4g_bridge_get_last_keyboard(uint8_t out[8])
@@ -438,7 +534,7 @@ bool m4g_bridge_get_last_mouse(uint8_t out[3])
   return true;
 }
 
-void m4g_bridge_process_usb_report(uint8_t slot, const uint8_t *report, size_t len)
+void m4g_bridge_process_usb_report(uint8_t slot, const uint8_t *report, size_t len, bool is_charachorder)
 {
   if (!report || len == 0)
     return;
@@ -481,6 +577,7 @@ void m4g_bridge_process_usb_report(uint8_t slot, const uint8_t *report, size_t l
   size_t key_count = extract_chara_keys(kb_payload, kb_len, slot_keys);
 
   state->present = true;
+  state->is_charachorder = is_charachorder;
   state->modifiers = (kb_len >= 1) ? kb_payload[0] : 0;
   memset(state->keys, 0, sizeof(state->keys));
   if (key_count > 0)
@@ -516,6 +613,7 @@ void m4g_bridge_reset_slot(uint8_t slot)
   memset(s_slots[slot].keys, 0, sizeof(s_slots[slot].keys));
   s_slots[slot].modifiers = 0;
   s_slots[slot].present = false;
+  s_slots[slot].is_charachorder = false;
 
   uint8_t empty_keys[6] = {0};
   emit_keyboard_state(0, empty_keys, false, 0, 0);

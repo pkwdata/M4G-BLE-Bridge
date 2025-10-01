@@ -9,6 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "driver/gpio.h"
 #include <string.h>
 #include <stdio.h>
 #include "sdkconfig.h"
@@ -42,6 +43,7 @@ static bool s_rescan_requested = false;
 static bool s_seen_charachorder_hub = false;
 static bool s_charachorder_mode = false;
 static uint8_t s_required_hid_devices = 1;
+static uint8_t s_charachorder_halves_connected = 0;
 
 // HID device representation (mirrors prior main.c struct)
 typedef struct
@@ -61,6 +63,7 @@ typedef struct
   uint16_t pid;
   uint8_t consecutive_errors;
   TickType_t last_error_tick;
+  bool is_charachorder;
 } m4g_usb_hid_device_t;
 
 static m4g_usb_hid_device_t s_hid_devices[M4G_BRIDGE_MAX_SLOTS];
@@ -80,8 +83,8 @@ static const char *transfer_status_to_str(usb_transfer_status_t status)
     return "stall";
   case USB_TRANSFER_STATUS_NO_DEVICE:
     return "no_device";
-  case USB_TRANSFER_STATUS_CANCELLED:
-    return "cancelled";
+  case USB_TRANSFER_STATUS_CANCELED:
+    return "canceled";
   default:
     return "unknown";
   }
@@ -99,33 +102,32 @@ static int allocate_hid_slot(void)
 
 static void update_usb_led_state(void);
 static void update_required_hid_devices(void);
+static bool is_charachorder_device(uint16_t vid, uint16_t pid);
 
 static void update_usb_led_state(void)
 {
   m4g_led_set_usb_connected(s_active_hid_devices >= s_required_hid_devices && s_required_hid_devices > 0);
 }
 
-static void update_required_hid_devices(void)
+static bool is_charachorder_device(uint16_t vid, uint16_t pid)
 {
 #if CONFIG_M4G_USB_CHARACHORDER_VENDOR_ID != 0
-  bool detected_charachorder = false;
-  if (s_seen_charachorder_hub)
-  {
-    for (size_t i = 0; i < (sizeof(s_hid_devices) / sizeof(s_hid_devices[0])); ++i)
-    {
-      if (!s_hid_devices[i].active)
-        continue;
-      if (s_hid_devices[i].vid != CONFIG_M4G_USB_CHARACHORDER_VENDOR_ID)
-        continue;
-      if (CONFIG_M4G_USB_CHARACHORDER_PRODUCT_ID != USB_DUAL_HID_PRODUCT_WILDCARD && s_hid_devices[i].pid != CONFIG_M4G_USB_CHARACHORDER_PRODUCT_ID)
-        continue;
-      detected_charachorder = true;
-      break;
-    }
-  }
+  if (vid != CONFIG_M4G_USB_CHARACHORDER_VENDOR_ID)
+    return false;
+  if (CONFIG_M4G_USB_CHARACHORDER_PRODUCT_ID != USB_DUAL_HID_PRODUCT_WILDCARD &&
+      pid != CONFIG_M4G_USB_CHARACHORDER_PRODUCT_ID)
+    return false;
+  return true;
 #else
-  bool detected_charachorder = false;
+  (void)vid;
+  (void)pid;
+  return false;
 #endif
+}
+
+static void update_required_hid_devices(void)
+{
+  bool detected_charachorder = s_seen_charachorder_hub && (s_charachorder_halves_connected > 0);
 
   bool previous_mode = s_charachorder_mode;
   s_charachorder_mode = detected_charachorder;
@@ -137,6 +139,8 @@ static void update_required_hid_devices(void)
   }
 
   update_usb_led_state();
+  bool halves_ok = (s_required_hid_devices == 0) ? false : (s_charachorder_halves_connected >= s_required_hid_devices);
+  m4g_bridge_set_charachorder_status(s_charachorder_mode, halves_ok);
 }
 
 // Forward declarations
@@ -261,7 +265,9 @@ static void cleanup_all_devices(void)
   s_seen_charachorder_hub = false;
   s_charachorder_mode = false;
   s_required_hid_devices = 1;
+  s_charachorder_halves_connected = 0;
   update_usb_led_state();
+  m4g_bridge_set_charachorder_status(false, false);
 }
 
 static void usb_host_client_event_cb(const usb_host_client_event_msg_t *event_msg, void *arg)
@@ -355,7 +361,16 @@ static void enumerate_device(uint8_t dev_addr)
         dev->interface_claimed = true;
         dev->vid = dev_desc->idVendor;
         dev->pid = dev_desc->idProduct;
-        snprintf(dev->device_name, sizeof(dev->device_name), "HID_%d_IF%d", dev_addr, intf_desc->bInterfaceNumber);
+        dev->is_charachorder = s_seen_charachorder_hub && is_charachorder_device(dev->vid, dev->pid);
+        if (dev->is_charachorder)
+        {
+          ++s_charachorder_halves_connected;
+          snprintf(dev->device_name, sizeof(dev->device_name), "CharaChorder_%u", (unsigned)s_charachorder_halves_connected);
+        }
+        else
+        {
+          snprintf(dev->device_name, sizeof(dev->device_name), "HID_%d_IF%d", dev_addr, intf_desc->bInterfaceNumber);
+        }
         ++s_active_hid_devices;
         ++s_claimed_device_count;
         ++hid_claims_on_device;
@@ -374,6 +389,8 @@ static void enumerate_device(uint8_t dev_addr)
           dev->slot = M4G_INVALID_SLOT;
           --s_active_hid_devices;
           --s_claimed_device_count;
+          if (dev->is_charachorder && s_charachorder_halves_connected > 0)
+            --s_charachorder_halves_connected;
           if (hid_claims_on_device > 0)
             --hid_claims_on_device;
           update_required_hid_devices();
@@ -416,7 +433,7 @@ static void hid_transfer_callback(usb_transfer_t *transfer)
       // Delegate raw report to bridge (which will emit BLE reports as needed)
       if (dev->slot != M4G_INVALID_SLOT)
       {
-        m4g_bridge_process_usb_report(dev->slot, transfer->data_buffer, transfer->actual_num_bytes);
+        m4g_bridge_process_usb_report(dev->slot, transfer->data_buffer, transfer->actual_num_bytes, dev->is_charachorder);
       }
       else if (ENABLE_DEBUG_USB_LOGGING)
       {
@@ -441,7 +458,7 @@ static void hid_transfer_callback(usb_transfer_t *transfer)
     switch (transfer->status)
     {
     case USB_TRANSFER_STATUS_NO_DEVICE:
-    case USB_TRANSFER_STATUS_CANCELLED:
+    case USB_TRANSFER_STATUS_CANCELED:
       request_rescan = true;
       break;
     case USB_TRANSFER_STATUS_ERROR:
@@ -510,6 +527,7 @@ static void setup_hid_transfers(void)
       dev->transfer = t;
     }
   }
+  update_required_hid_devices();
   update_usb_led_state();
   if (s_active_hid_devices >= s_required_hid_devices)
   {
