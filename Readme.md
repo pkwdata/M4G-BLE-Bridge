@@ -15,6 +15,14 @@ Then with the help of Claude code I was able to modify this project to provide s
 - **CharaChorder Optimized**: Specifically tuned for CharaChorder's dual ESP32-S3 internal architecture
 - **Modular Components**: Clean separation of logging, LED status, USB host, BLE HID, and translation (bridge) logic
 - **Persistent Boot Logs**: Captures early boot / crash logs into NVS and dumps them on next startup
+- **Runtime Configuration**: NVS-based settings system for adjusting behavior without recompilation
+
+## Quick Links
+
+- **[📋 Development Roadmap](docs/development_roadmap.md)** - Comprehensive plan for future features
+- **[📚 Documentation Index](docs/README.md)** - All technical docs and guides
+- **[🔧 Tools](tools/README.md)** - Configuration validator and utilities
+- **[🐛 Issues](https://github.com/pkwdata/M4G-BLE-Bridge/issues)** - Bug reports and feature requests
 
 ## Hardware Requirements
 
