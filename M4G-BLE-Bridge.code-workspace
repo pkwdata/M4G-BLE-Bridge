@@ -1,7 +1,7 @@
 {
 	"folders": [
 		{
-			"uri": "vscode-vfs://github/pkwdata/M4G-BLE-Bridge"
+			"path": "."
 		}
 	],
 	"settings": {
@@ -57,6 +57,6 @@
 			"cinttypes": "cpp",
 			"typeinfo": "cpp"
 		},
-		"files.autoSave": "afterDelay"
+		"platformio-ide.reopenSerialMonitorDelay": 0
 	}
 }

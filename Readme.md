@@ -155,7 +155,7 @@ Custom project options appear under the menu title **"M4G Bridge Options"** in `
 
 Implementation details:
 
-- The symbols are defined in the root `Kconfig.projbuild` file (standard ESP-IDF inclusion point)
+- The symbols are defined in the repository root `Kconfig` file (set via `__ROOT_KCONFIG` in CMake)
 - `main/Kconfig` is only a stub to avoid duplicate definitions after restructuring
 - If you ever do a deep clean and the menu seems missing, press `/` in `menuconfig` and search for e.g. `M4G_ENABLE_ARROW_MOUSE` to confirm inclusion
 - Run `idf.py fullclean menuconfig` if cache issues hide the menu after file moves
@@ -251,9 +251,10 @@ The CharaChorder (and potentially other advanced keyboards) can emit chorded or 
 
 1. Receives raw HID packets from `m4g_usb`
 2. Maintains an active key set / chord state
-3. Flattens chords into a standard boot keyboard report (modifier + 6 key slots)
-4. Optionally converts directional key groups (e.g. arrow keys) into relative mouse deltas (enabling rudimentary mouse-emulation) and forwards via `m4g_ble`
-5. Caches last sent keyboard & mouse reports to suppress redundant notifications
+3. Buffers physical chord presses until release so raw finger positions never leak over BLE; single-key presses are replayed automatically when no chord output follows
+4. Flattens emitted chords into standard boot keyboard reports (modifier + 6 key slots) and forwards them via `m4g_ble`
+5. Optionally converts directional key groups (e.g. arrow keys) into relative mouse deltas (enabling rudimentary mouse-emulation)
+6. Caches last sent keyboard & mouse reports to suppress redundant notifications
 
 This keeps USB acquisition and BLE transport unaware of device‑specific translation rules.
 

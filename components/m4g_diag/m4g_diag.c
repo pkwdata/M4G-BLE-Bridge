@@ -9,6 +9,19 @@
 #include "freertos/task.h"
 #include "nvs_flash.h"
 
+// Ensure boolean types are available for IntelliSense
+#ifndef __cplusplus
+#ifndef true
+#define true 1
+#endif
+#ifndef false
+#define false 0
+#endif
+#ifndef bool
+#define bool _Bool
+#endif
+#endif
+
 static const char *DIAG_TAG = "M4G-DIAG";
 
 // Configure whether to spawn a lightweight periodic status task
