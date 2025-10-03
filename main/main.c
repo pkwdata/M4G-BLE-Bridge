@@ -10,12 +10,14 @@
 #include "esp_sleep.h" // for esp_light_sleep_start
 #include "nvs_flash.h"
 #include "sdkconfig.h"
+#include "m4g_platform.h" // Platform abstraction layer
 #include "m4g_logging.h"
 #include "m4g_led.h"
 #include "m4g_ble.h"
 #include "m4g_usb.h"
 #include "m4g_bridge.h"
 #include "m4g_diag.h"
+#include "m4g_settings.h" // Runtime settings
 
 // Ensure boolean types are available for IntelliSense
 #ifndef __cplusplus
@@ -43,17 +45,6 @@ static const char *TAG = "M4G-BLE-BRIDGE";
 #define CONFIG_M4G_IDLE_SLEEP_TIMEOUT_MS 0
 #endif
 
-static void init_nvs(void)
-{
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
-    {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-}
-
 static void log_stack_watermarks(void)
 {
 #if CONFIG_M4G_STACK_WATERMARK_PERIOD_MS > 0
@@ -80,25 +71,36 @@ void app_main(void)
 #if CONFIG_M4G_BOARD_DEVKIT
     m4g_logging_disable_persistence();
 #endif
+    // Enable USB and keypress logging for debugging
     m4g_log_enable_usb(true);
     m4g_log_enable_keypress(true);
-    m4g_log_enable_ble(true);
-    LOG_AND_SAVE(true, I, TAG, "Booting M4G BLE Bridge");
-    init_nvs();
+    m4g_log_enable_ble(true); // Temporarily enable to debug typing issue
+
+    ESP_LOGI(TAG, "Booting M4G BLE Bridge");
+    ESP_LOGI(TAG, "Platform: %s", m4g_platform_get_name());
+    LOG_AND_SAVE(true, I, TAG, "Booting M4G BLE Bridge on %s", m4g_platform_get_name());
+
 #if !CONFIG_M4G_BOARD_DEVKIT
-    m4g_logging_set_nvs_ready();
+    // For boards with persistent logging, dump previous boot logs
     m4g_log_dump_and_clear();
 #endif
 
-    if (m4g_led_init() != ESP_OK)
-        LOG_AND_SAVE(true, E, TAG, "LED init failed");
-    if (m4g_ble_init() != ESP_OK)
-        LOG_AND_SAVE(true, E, TAG, "BLE init failed");
+    // Initialize all platform subsystems (NVS, LED, BLE, Bridge, USB)
+    if (m4g_platform_init() != ESP_OK)
+    {
+        LOG_AND_SAVE(true, E, TAG, "Platform init failed");
+        return;
+    }
+
+    // Initialize runtime settings (after NVS init in m4g_platform_init)
+    ESP_LOGI(TAG, "Initializing runtime settings");
+    if (m4g_settings_init() != ESP_OK)
+    {
+        LOG_AND_SAVE(true, W, TAG, "Settings init failed, using defaults");
+    }
+
     vTaskDelay(pdMS_TO_TICKS(200));
-    if (m4g_bridge_init() != ESP_OK)
-        LOG_AND_SAVE(true, W, TAG, "Bridge init failed (continuing)");
-    if (m4g_usb_init(NULL, NULL) != ESP_OK)
-        LOG_AND_SAVE(true, E, TAG, "USB init failed");
+
     m4g_diag_run_startup_checks();
     LOG_AND_SAVE(true, I, TAG, "Initialization complete");
 
@@ -112,7 +114,19 @@ void app_main(void)
 
     for (;;)
     {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        // Process key repeat with shorter delay for responsive repeat
+        vTaskDelay(pdMS_TO_TICKS(10)); // 10ms for responsive key repeat
+        m4g_bridge_process_key_repeat();
+
+        // Only do the following checks every 1 second
+        static TickType_t last_heartbeat = 0;
+        TickType_t now = xTaskGetTickCount();
+        if ((now - last_heartbeat) < pdMS_TO_TICKS(1000))
+        {
+            continue;
+        }
+        last_heartbeat = now;
+
         if (m4g_log_persistence_enabled())
         {
             m4g_log_flush();

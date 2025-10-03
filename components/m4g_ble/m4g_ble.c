@@ -17,9 +17,14 @@
 #include "host/util/util.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
-#include "host/ble_store.h" // for ble_store_util_status_rr
+#include "host/ble_store.h" // for ble_store_util_status_rr, ble_store_util_delete_peer
+
+// Forward declaration for NimBLE store config functions (not in public headers)
 #if CONFIG_BT_NIMBLE_NVS_PERSIST
-#include "host/ble_store_config.h"
+void ble_store_config_init(void);
+int ble_store_config_read(int obj_type, const union ble_store_key *key, union ble_store_value *val);
+int ble_store_config_write(int obj_type, const union ble_store_value *val);
+int ble_store_config_delete(int obj_type, const union ble_store_key *key);
 #endif
 
 // Ensure boolean types are available for IntelliSense
@@ -132,7 +137,7 @@ static const struct ble_gatt_svc_def hid_svcs[] = {
     {.type = BLE_GATT_SVC_TYPE_PRIMARY, .uuid = BLE_UUID16_DECLARE(BLE_HID_SERVICE_UUID), .characteristics = (struct ble_gatt_chr_def[]){{.uuid = BLE_UUID16_DECLARE(BLE_HID_CHAR_HID_INFO_UUID), .access_cb = hid_svc_access_cb, .flags = BLE_GATT_CHR_F_READ}, {.uuid = BLE_UUID16_DECLARE(BLE_HID_CHAR_REPORT_MAP_UUID), .access_cb = hid_svc_access_cb, .flags = BLE_GATT_CHR_F_READ}, {.uuid = BLE_UUID16_DECLARE(BLE_HID_CHAR_HID_CTRL_POINT_UUID), .access_cb = hid_svc_access_cb, .flags = BLE_GATT_CHR_F_WRITE_NO_RSP}, {.uuid = BLE_UUID16_DECLARE(0x2A4E), .access_cb = hid_svc_access_cb, .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE_NO_RSP}, // Protocol Mode
                                                                                                                                          {.uuid = BLE_UUID16_DECLARE(0x2A22), .access_cb = hid_svc_access_cb, .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY, .min_key_size = 16, .descriptors = (struct ble_gatt_dsc_def[]){{.uuid = BLE_UUID16_DECLARE(0x2902), .access_cb = hid_svc_access_cb, .att_flags = BLE_ATT_F_READ | BLE_ATT_F_WRITE}, {0}}},                                                                                                                                                                                                     // Boot Keyboard Input Report
                                                                                                                                          {.uuid = BLE_UUID16_DECLARE(BLE_HID_CHARACTERISTIC_REPORT_UUID), .access_cb = hid_svc_access_cb, .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY, .min_key_size = 16, .descriptors = (struct ble_gatt_dsc_def[]){{.uuid = BLE_UUID16_DECLARE(0x2902), .access_cb = hid_svc_access_cb, .att_flags = BLE_ATT_F_READ | BLE_ATT_F_WRITE},                                                                                                                                                                                // CCCD
-                                                                                                                                                                                                                                                                                                                                                               {.uuid = BLE_UUID16_DECLARE(0x2908), .access_cb = hid_svc_access_cb, .att_flags = BLE_ATT_F_READ},                                                                                                                                                                                                  // Report Reference
+                                                                                                                                                                                                                                                                                                                                                               {.uuid = BLE_UUID16_DECLARE(0x2908), .access_cb = hid_svc_access_cb, .att_flags = BLE_ATT_F_READ},                                                                                                                                                                                                  // Report Reference (composite kbd+mouse)
                                                                                                                                                                                                                                                                                                                                                                {0}}},
                                                                                                                                          {0}}},
 #ifdef CONFIG_M4G_ENABLE_DIAG_GATT
@@ -148,7 +153,6 @@ static int hid_svc_access_cb(uint16_t conn_handle, uint16_t attr_handle, struct 
   int rc;
   static uint8_t protocol_mode = 1; // Report Protocol
   uint8_t hid_info[4] = {0x11, 0x01, 0x00, 0x00};
-  uint8_t report_ref_kbd[2] = {0x01, 0x01};
   switch (ctxt->op)
   {
   case BLE_GATT_ACCESS_OP_READ_CHR:
@@ -178,8 +182,7 @@ static int hid_svc_access_cb(uint16_t conn_handle, uint16_t attr_handle, struct 
     }
     if (ble_uuid_cmp(ctxt->chr->uuid, BLE_UUID16_DECLARE(BLE_HID_CHARACTERISTIC_REPORT_UUID)) == 0)
     {
-      uint8_t empty[9] = {0};
-      empty[0] = 0x01; // default to keyboard report ID
+      uint8_t empty[8] = {0};
       rc = os_mbuf_append(ctxt->om, empty, sizeof(empty));
       return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
@@ -198,12 +201,25 @@ static int hid_svc_access_cb(uint16_t conn_handle, uint16_t attr_handle, struct 
   case BLE_GATT_ACCESS_OP_READ_DSC:
     if (ble_uuid_cmp(ctxt->dsc->uuid, BLE_UUID16_DECLARE(0x2908)) == 0)
     {
-      rc = os_mbuf_append(ctxt->om, report_ref_kbd, sizeof(report_ref_kbd));
+      // Report Reference descriptor - need to distinguish keyboard vs mouse
+      // Single Report characteristic with multiple Report IDs in Report Map
+      uint8_t report_ref[2];
+      report_ref[0] = 0x00; // Report ID (0 means use Report ID from Report Map)
+      report_ref[1] = 0x01; // Input Report type
+      rc = os_mbuf_append(ctxt->om, report_ref, sizeof(report_ref));
       return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
     if (ble_uuid_cmp(ctxt->dsc->uuid, BLE_UUID16_DECLARE(0x2902)) == 0)
     {
-      bool enabled = ble_uuid_cmp(ctxt->chr->uuid, BLE_UUID16_DECLARE(0x2A22)) == 0 ? s_boot_notifications_enabled : s_report_notifications_enabled;
+      bool enabled;
+      if (ble_uuid_cmp(ctxt->chr->uuid, BLE_UUID16_DECLARE(0x2A22)) == 0)
+      {
+        enabled = s_boot_notifications_enabled;
+      }
+      else
+      {
+        enabled = s_report_notifications_enabled;
+      }
       uint16_t cccd = enabled ? 0x0001 : 0x0000;
       rc = os_mbuf_append(ctxt->om, &cccd, sizeof(cccd));
       return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
@@ -225,7 +241,7 @@ static int hid_svc_access_cb(uint16_t conn_handle, uint16_t attr_handle, struct 
         else
         {
           s_report_notifications_enabled = enable;
-          LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG, "Notifications %s", enable ? "ENABLED" : "disabled");
+          LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG, "Report notifications %s", enable ? "ENABLED" : "disabled");
         }
       }
       return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
@@ -253,7 +269,7 @@ static void discover_report_handles(void)
   if (rc == 0 && chr_handle != 0)
   {
     s_report_chr_handle = chr_handle;
-    LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG, "Report characteristic handle=0x%04X", s_report_chr_handle);
+    LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG, "Report characteristic handle=0x%04X (composite kbd+mouse)", s_report_chr_handle);
   }
   else
   {
@@ -283,11 +299,11 @@ static void start_advertising(void)
   adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
   adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
   // Force proper advertising intervals (fix for itvl_min=0 itvl_max=0 issue)
-  adv_params.itvl_min = 32;   // 20ms (32 * 0.625ms) 
-  adv_params.itvl_max = 48;   // 30ms (48 * 0.625ms)
-  
+  adv_params.itvl_min = 32; // 20ms (32 * 0.625ms)
+  adv_params.itvl_max = 48; // 30ms (48 * 0.625ms)
+
   LOG_AND_SAVE(true, I, BLE_TAG, "BEFORE ADV START: min=%d max=%d", adv_params.itvl_min, adv_params.itvl_max);
-  adv_params.channel_map = 0;  // Use all channels
+  adv_params.channel_map = 0;   // Use all channels
   adv_params.filter_policy = 0; // Allow all connections
   struct ble_hs_adv_fields fields;
   memset(&fields, 0, sizeof(fields));
@@ -299,8 +315,8 @@ static void start_advertising(void)
   static ble_uuid16_t hid_uuid = BLE_UUID16_INIT(BLE_HID_SERVICE_UUID);
   fields.uuids16 = &hid_uuid;
   fields.num_uuids16 = 1;
-  fields.uuids16_is_complete = 0;
-  fields.appearance = 0x03C1;
+  fields.uuids16_is_complete = 1; // Mark as complete - we're advertising all services
+  fields.appearance = 0x03C0;     // Generic HID (supports both keyboard and mouse)
   fields.appearance_is_present = 1;
   int rc = ble_gap_adv_set_fields(&fields);
   if (rc != 0)
@@ -473,7 +489,7 @@ esp_err_t m4g_ble_init(void)
   irc = ble_gatts_add_svcs(hid_svcs);
   if (irc != 0)
     LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, E, BLE_TAG, "add svcs rc=%d", irc);
-  
+
   // Configure NVS storage for bonding keys BEFORE ble_store_config_init()
 #if CONFIG_BT_NIMBLE_NVS_PERSIST
   ble_hs_cfg.store_read_cb = ble_store_config_read;
@@ -492,111 +508,87 @@ esp_err_t m4g_ble_init(void)
 #else
   LOG_AND_SAVE(true, W, BLE_TAG, "CONFIG_BT_NIMBLE_NVS_PERSIST is disabled; BLE bonds will not survive reflashing");
 #endif
-  
+
   nimble_port_freertos_init(host_task);
   discover_report_handles();
   LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG, "BLE HID initialized");
   return ESP_OK;
 }
 
-static int notify_handle(uint16_t chr_handle, const uint8_t *report, size_t len)
+static bool notify_handle(uint16_t chr_handle, const uint8_t *report, size_t len)
 {
-  if (chr_handle == 0 || !report || len == 0)
-    return BLE_HS_EINVAL;
-
   struct os_mbuf *om = ble_hs_mbuf_from_flat(report, len);
   if (!om)
-    return BLE_HS_ENOMEM;
-
+    return false;
   int rc = ble_gatts_notify_custom(s_conn_handle, chr_handle, om);
   if (rc != 0)
   {
+    LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, W, BLE_TAG, "notify handle 0x%04X failed rc=%d", chr_handle, rc);
     os_mbuf_free_chain(om);
+    return false;
   }
-  return rc;
+  return true;
 }
 
-static bool send_report_internal(uint8_t report_id, const uint8_t *report, size_t len, bool notify_boot)
+static bool send_report_internal(const uint8_t *report, size_t len)
 {
   if (!m4g_ble_is_connected())
     return false;
-
+  if (len > 64)
+    len = 64; // safety cap
   bool sent = false;
 
-  uint8_t payload[65];
-  size_t payload_len = len + 1;
-  if (payload_len > sizeof(payload))
-    payload_len = sizeof(payload);
-  memset(payload, 0, payload_len);
-  payload[0] = report_id;
-  size_t copy_len = len;
-  if (copy_len > payload_len - 1)
-    copy_len = payload_len - 1;
-  memcpy(&payload[1], report, copy_len);
-
-  if (ENABLE_DEBUG_BLE_LOGGING)
+  if (s_report_notifications_enabled && s_report_chr_handle != 0)
   {
-    LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG,
-                 "Keyboard payload (id=0x%02X len=%d) -> report_handle=0x%04X enabled=%d boot_handle=0x%04X enabled=%d",
-                 report_id, (int)payload_len, s_report_chr_handle, s_report_notifications_enabled,
-                 s_boot_report_chr_handle, s_boot_notifications_enabled);
-    ESP_LOG_BUFFER_HEX_LEVEL(BLE_TAG, payload, payload_len, ESP_LOG_INFO);
+    sent |= notify_handle(s_report_chr_handle, report, len);
   }
 
-  if (s_report_chr_handle != 0)
+  if (s_boot_notifications_enabled && s_boot_report_chr_handle != 0)
   {
-    int rc = notify_handle(s_report_chr_handle, payload, payload_len);
-    if (rc == 0)
-    {
-      sent = true;
-    }
-    else if (rc != BLE_HS_ENOTCONN && rc != BLE_HS_ENOMEM)
-    {
-      LOG_AND_SAVE(true, W, BLE_TAG, "Report notify failed rc=%d handle=0x%04X", rc, s_report_chr_handle);
-    }
-    else if (ENABLE_DEBUG_BLE_LOGGING)
-    {
-      LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, W, BLE_TAG, "Report notify skipped rc=%d handle=0x%04X", rc, s_report_chr_handle);
-    }
-  }
-
-  if (notify_boot && s_boot_report_chr_handle != 0)
-  {
-    size_t boot_len = len;
-    if (boot_len > 64)
-      boot_len = 64;
-    int rc = notify_handle(s_boot_report_chr_handle, report, boot_len);
-    if (rc == 0)
-    {
-      sent = true;
-    }
-    else if (rc != BLE_HS_ENOTCONN && rc != BLE_HS_ENOMEM)
-    {
-      LOG_AND_SAVE(true, W, BLE_TAG, "Boot notify failed rc=%d handle=0x%04X", rc, s_boot_report_chr_handle);
-    }
-    else if (ENABLE_DEBUG_BLE_LOGGING)
-    {
-      LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, W, BLE_TAG, "Boot notify skipped rc=%d handle=0x%04X", rc, s_boot_report_chr_handle);
-    }
+    sent |= notify_handle(s_boot_report_chr_handle, report, len);
   }
 
 #ifdef CONFIG_M4G_ASSERT_BLE_HANDLE
-  if (!sent && (s_report_chr_handle != 0 || (notify_boot && s_boot_report_chr_handle != 0)))
+  if (!sent && (s_report_notifications_enabled || s_boot_notifications_enabled))
   {
     assert(false && "Failed to notify any HID characteristic");
   }
 #endif
 
-  if (!sent)
-  {
-    LOG_AND_SAVE(true, W, BLE_TAG, "No HID notifications sent (report_handle=0x%04X boot_handle=0x%04X)",
-                 s_report_chr_handle, s_boot_report_chr_handle);
-  }
-
   return sent;
 }
 
-bool m4g_ble_send_keyboard_report(const uint8_t report[8]) { return send_report_internal(0x01, report, 8, true); }
-bool m4g_ble_send_mouse_report(const uint8_t report[3]) { return send_report_internal(0x02, report, 3, false); }
+bool m4g_ble_send_keyboard_report(const uint8_t report[8])
+{
+  // Prepend Report ID 0x01 for keyboard
+  uint8_t report_with_id[9];
+  report_with_id[0] = 0x01; // Keyboard Report ID
+  memcpy(&report_with_id[1], report, 8);
+
+  return send_report_internal(report_with_id, 9);
+}
+
+bool m4g_ble_send_mouse_report(const uint8_t report[3])
+{
+  if (!m4g_ble_is_connected())
+    return false;
+
+  // Mouse: Send 3 bytes WITHOUT Report ID to the mouse Report characteristic
+  // Format: [Buttons, X, Y] = 3 bytes (no Report ID)
+  if (ENABLE_DEBUG_BLE_LOGGING)
+  {
+    LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG,
+                 "Sending mouse report with ID: [0x02 0x%02X 0x%02X 0x%02X] (Report ID, buttons, dx=%d, dy=%d)",
+                 report[0], report[1], report[2],
+                 (int8_t)report[1], (int8_t)report[2]);
+  }
+
+  // Prepend Report ID 0x02 for mouse
+  uint8_t report_with_id[4];
+  report_with_id[0] = 0x02; // Mouse Report ID
+  memcpy(&report_with_id[1], report, 3);
+
+  return send_report_internal(report_with_id, 4);
+}
 void m4g_ble_start_advertising(void) { start_advertising(); }
 void m4g_ble_host_task(void *param) { host_task(param); }

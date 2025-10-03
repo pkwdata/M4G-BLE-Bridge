@@ -49,7 +49,9 @@
     "stdexcept": "cpp",
     "streambuf": "cpp",
     "cinttypes": "cpp",
-    "typeinfo": "cpp"
+    "typeinfo": "cpp",
+    "flat_map": "cpp",
+    "ranges": "cpp"
   },
   "C_Cpp.intelliSenseEngine": "default",
   "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",

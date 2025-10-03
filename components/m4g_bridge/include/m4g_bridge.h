@@ -28,6 +28,9 @@ bool m4g_bridge_get_last_keyboard(uint8_t out[8]);
 // Optional: query last sent mouse report (for debugging)
 bool m4g_bridge_get_last_mouse(uint8_t out[3]);
 
+// Process key repeat (should be called periodically from main loop)
+void m4g_bridge_process_key_repeat(void);
+
 typedef struct
 {
   uint32_t keyboard_reports_sent;

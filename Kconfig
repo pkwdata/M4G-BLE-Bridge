@@ -4,24 +4,33 @@ source "$IDF_PATH/Kconfig"
 
 menu "M4G Bridge Options"
 
+# Include settings component Kconfig first for easy access
+rsource "components/m4g_settings/Kconfig"
+
 menu "Platform Configuration"
+	comment "Platform selection determines USB host controller and BLE stack"
+
 	choice M4G_TARGET
 		prompt "Target Platform"
 		default M4G_TARGET_ESP32S3
 		help
 			Select the target platform for the M4G BLE Bridge.
+			This determines the USB host controller and BLE stack used.
 
 	config M4G_TARGET_ESP32S3
 		bool "ESP32-S3 (native USB host)"
 		help
 			Build for ESP32-S3 with native USB OTG host capabilities.
 			Supports dual-device CharaChorder and standard keyboards.
+			Uses ESP-IDF USB host stack and NimBLE.
 
 	config M4G_TARGET_NRF52840
-		bool "nRF52840 + MAX3421E"
+		bool "nRF52840 + MAX3421E (experimental)"
 		help
 			Build for nRF52840 SoC with external MAX3421E USB host controller.
 			Requires custom hardware with MAX3421E connected via SPI.
+			Uses Zephyr RTOS and Zephyr BLE stack.
+			WARNING: This is experimental and not yet fully implemented.
 	endchoice
 
 	menu "nRF52840 + MAX3421E Configuration"
@@ -79,6 +88,53 @@ config M4G_ENABLE_ARROW_MOUSE
 		When enabled, the bridge will translate arrow keys into relative mouse
 		movements. Disable to pass arrow keys through unchanged.
 
+menu "Mouse Movement Configuration"
+	depends on M4G_ENABLE_ARROW_MOUSE
+
+	config M4G_MOUSE_BASE_SPEED
+		int "Base mouse movement speed (pixels)"
+		range 1 50
+		default 6
+		help
+			Initial movement speed in pixels when arrow key is first pressed.
+			This is the starting speed before acceleration kicks in.
+
+	config M4G_MOUSE_ENABLE_ACCELERATION
+		bool "Enable mouse acceleration"
+		default y
+		help
+			When enabled, mouse movement speed increases the longer the arrow
+			key is held down, providing finer control for small movements and
+			faster traversal for longer movements.
+
+	config M4G_MOUSE_ACCEL_INCREMENT
+		int "Mouse acceleration increment (pixels)"
+		depends on M4G_MOUSE_ENABLE_ACCELERATION
+		range 1 10
+		default 2
+		help
+			Amount to increase speed for every acceleration step when key is held.
+			Speed increases by this amount every ACCEL_INTERVAL_MS milliseconds.
+
+	config M4G_MOUSE_ACCEL_INTERVAL_MS
+		int "Mouse acceleration interval (ms)"
+		depends on M4G_MOUSE_ENABLE_ACCELERATION
+		range 50 1000
+		default 75
+		help
+			Time interval in milliseconds between acceleration steps.
+			Every 75ms the key is held, speed increases by ACCEL_INCREMENT pixels.
+
+	config M4G_MOUSE_MAX_SPEED
+		int "Maximum mouse speed (pixels)"
+		depends on M4G_MOUSE_ENABLE_ACCELERATION
+		range 5 100
+		default 40
+		help
+			Maximum movement speed in pixels, regardless of how long the key
+			is held. Prevents overly fast cursor movement.
+endmenu
+
 config M4G_ENABLE_DUPLICATE_SUPPRESSION
 	bool "Suppress duplicate consecutive HID reports"
 	default y
@@ -86,7 +142,57 @@ config M4G_ENABLE_DUPLICATE_SUPPRESSION
 		When enabled, identical consecutive keyboard/mouse reports will not be
 		re-sent over BLE to reduce bandwidth and power consumption.
 
+menu "Key Repeat Configuration"
+	config M4G_ENABLE_KEY_REPEAT
+		bool "Enable key repeat for held keys"
+		default y
+		help
+			When enabled, holding down a key will cause it to repeat after an
+			initial delay, similar to standard keyboard behavior.
+
+	config M4G_KEY_REPEAT_DELAY_MS
+		int "Key repeat initial delay (ms)"
+		depends on M4G_ENABLE_KEY_REPEAT
+		range 100 5000
+		default 1000
+		help
+			Time in milliseconds to wait before starting key repeat when a key
+			is held down. This delay starts AFTER the chord timeout period.
+			
+			Typing speed considerations:
+			- Fast typists (90 WPM): ~133ms per character
+			- Slow typists (15 WPM): ~800ms per character
+			- Typical single keypress: 50-200ms hold time
+			- Deliberate key hold for repeat: >500ms
+			
+			Recommended: 500-1000ms to avoid accidental repeats while typing
+			normally, but allow intentional repeat without excessive delay.
+			Total delay = chord_timeout (500ms) + this value (1000ms) = ~1500ms
+
+	config M4G_KEY_REPEAT_RATE_MS
+		int "Key repeat rate (ms)"
+		depends on M4G_ENABLE_KEY_REPEAT
+		range 10 500
+		default 33
+		help
+			Time interval in milliseconds between repeated keypresses once
+			repeat has started. 33ms = ~30 repetitions per second.
+			Standard keyboard behavior is typically 30-50ms.
+endmenu
+
 menu "CharaChorder Configuration"
+	config M4G_CHARACHORDER_CHORD_TIMEOUT_MS
+		int "Single-key chord timeout (ms)"
+		range 50 1000
+		default 500
+		help
+			Time in milliseconds to wait for a second key when chord collection
+			starts with a single key. If no second key arrives within this timeout,
+			the single key is passed through for normal processing (including key repeat).
+			Lower values allow faster key repeat, higher values allow more time for
+			chord detection. Typical chords are pressed within 50-150ms.
+			Recommended: 100-200ms for comfortable chord detection.
+
 	config M4G_CHARACHORDER_CHORD_DELAY_MS
 		int "CharaChorder chord processing grace period (ms)"
 		range 5 500
@@ -177,18 +283,27 @@ config M4G_DIAG_TASK_STACK_SIZE
 		Only applies when diagnostic GATT characteristic is enabled.
 
 menu "Board Configuration"
+	depends on M4G_TARGET_ESP32S3
+	comment "Board selection sets GPIO defaults for LEDs and USB"
 
 choice M4G_BOARD_SELECT
 	prompt "Target board"
 	default M4G_BOARD_DEVKIT
 	help
-		Select the hardware variant to apply sensible defaults for GPIOs.
+		Select the ESP32-S3 hardware variant to apply sensible defaults for GPIOs.
+		This primarily affects LED pin assignments and power control.
 
 config M4G_BOARD_DEVKIT
 	bool "ESP32-S3 DevKit"
+	help
+		Standard ESP32-S3 development board with full GPIO access.
+		NeoPixel LED on GPIO 48 (typical for DevKitC).
 
 config M4G_BOARD_QTPY
 	bool "Adafruit QT Py ESP32-S3"
+	help
+		Compact Adafruit QT Py board with ESP32-S3.
+		NeoPixel LED on GPIO 38, limited GPIO availability.
 
 endchoice
 
