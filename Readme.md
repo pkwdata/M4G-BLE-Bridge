@@ -295,62 +295,89 @@ Earlier revisions performed conversion directly in `main.c` / USB callback. Thos
 
 ## Future Development
 
-### Planned Features
+> **📋 Comprehensive Roadmap:** See [Development Roadmap](docs/development_roadmap.md) for detailed planning, specifications, and timelines for all future enhancements.
 
-#### Hardware Enhancements
+### Quick Summary
 
-- [ ] **Qt Pi Format Adaptation**: Design compact Qt Pi-compatible PCB form factor
-- [ ] **nRF52840 Integration**: Add nRF52840 for enhanced BLE performance and power efficiency
-- [ ] **Battery Power System**: Integrate LiPo battery with charging circuit and power management
-- [ ] **Power Control**: Add sleep modes and power optimization for battery operation
-- [ ] **Dev Board Options**: Also researching option to use the MAC3421E as the Host controller with the nRF52840.
+The M4G BLE Bridge project has an ambitious roadmap focused on enabling wireless operation, multi-platform support, and advanced features. Key areas of development include:
 
-#### Software Features
+#### 🔋 **Phase 1: Power Management & Battery System** (4-6 weeks)
+- LiPo battery integration (18650 cells, 2S configuration)
+- Separate power rails for ESP32-S3 (3.3V @ 0.5A) and USB devices (5V @ 3A)
+- USB-C PD charging with protection circuitry
+- Fuel gauge monitoring and intelligent power management
+- Sleep modes for extended battery life
 
-- [ ] **Universal Keyboard Support**: Expand compatibility to all USB HID keyboards
-- [ ] **Multi-device Pairing**: Support connection to multiple devices simultaneously
-- [ ] **Wireless Keyboard Halves**: Enable wireless communication between split keyboard halves
-- [ ] **Advanced HID Features**: Support for media keys, macros, and programmable functions
+#### 🔐 **Phase 2: BLE Security & Multi-Device Support** (3-4 weeks)
+- Enhanced BLE security with Secure Connections and encryption
+- Support for pairing with up to 8 devices
+- Quick device switching via button or BLE control
+- Privacy features with Resolvable Private Addresses
 
-#### Connectivity Improvements
+#### 💡 **Phase 3: LED Control API & Effects** (2-3 weeks)
+- Comprehensive LED control for bridge status LED
+- Control CharaChorder half LEDs (4 per half)
+- Dynamic effects (breathing, rainbow, typing reactive)
+- BLE GATT service for remote LED control
+- Battery level and chord quality visual feedback
 
-- [ ] **2.4GHz Wireless**: Add dedicated wireless protocol for ultra-low latency
-- [ ] **USB-C Hub Support**: Expand to support USB-C keyboards and devices
-- [ ] **Hot-swap Support**: Dynamic keyboard detection and switching
-- [ ] **Mobile Compatibility**: Enhanced support for Android and iOS devices
+#### 🖱️ **Phase 4: Trackball Mouse Integration** (3-4 weeks)
+- PMW3360 optical sensor integration
+- Physical trackball module with buttons
+- Smooth cursor control with acceleration curves
+- Configurable DPI settings (400-1600)
+- 3D-printable housing design
 
-### Development Roadmap
+#### 📡 **Phase 5: Firmware Management & OTA Updates** (4-5 weeks)
+- Wireless firmware updates over BLE
+- Secure, authenticated updates with signature verification
+- Resume capability after interruption
+- Progress indication and battery level checking
+- Future: 2.4GHz OTA for faster updates
 
-#### Phase 1: Hardware Miniaturization
+#### 🔧 **Phase 6: Multi-Platform Support** (8-12 weeks)
+- **6A:** Adafruit Qt Py ESP32-S3 build (2-3 weeks)
+- **6B:** nRF52840 + MAX3421E platform (6-9 weeks)
+  - Platform Abstraction Layer (PAL) for code reuse
+  - Custom USB host driver for MAX3421E
+  - Zephyr RTOS integration
+- **6C:** Battery solutions for all platforms
 
-- Design Qt Pi-compatible PCB
-- Integrate battery and charging system
-- Add power management ICs
+#### 📚 **Phase 7: Documentation & User Experience** (2-3 weeks)
+- Comprehensive user guides and tutorials
+- Developer API reference documentation
+- Streamlined build options menu
+- Enhanced runtime configuration via NVS
+- CLI and mobile app for configuration
 
-#### Phase 2: Enhanced Connectivity
+### Implementation Status
 
-- Implement nRF52840 dual-chip architecture
-- Add 2.4GHz wireless for keyboard halves
-- Develop low-power communication protocols
+| Phase | Status | Priority | Complexity |
+|-------|--------|----------|------------|
+| Phase 1: Power & Battery | Planned | HIGH | HIGH |
+| Phase 2: BLE Security | Planned | HIGH | MEDIUM |
+| Phase 3: LED Control | Planned | MEDIUM | MEDIUM |
+| Phase 4: Trackball | Planned | MEDIUM | MEDIUM-HIGH |
+| Phase 5: OTA Updates | Planned | HIGH | HIGH |
+| Phase 6A: Qt Py | Planned | HIGH | MEDIUM |
+| Phase 6B: nRF52840 | Planned | MEDIUM-HIGH | VERY HIGH |
+| Phase 7: Documentation | Planned | MEDIUM | LOW-MEDIUM |
 
-#### Phase 3: Universal Compatibility
+### Additional Resources
 
-- Create generic USB HID detection
-- Implement device-specific optimizations
-- Add configuration management system
+- **[nRF52840 + MAX3421E Integration Plan](docs/nrf52840_max3421e_plan.md)** - Technical details for alternate platform
+- **[CharaChorder Timing Analysis](docs/charachorder_timing_analysis.md)** - Chord detection optimization
+- **[Development Roadmap](docs/development_roadmap.md)** - Comprehensive planning document (NEW)
 
-#### Phase 4: Battery Support / 3d printed case
+### Contributing to Development
 
-- Remove the Wires!
-- 3d printed case that attached to the M4G rails
-- Battery case. Thinking of powering with LiPo 18650s
-- Power controller and recharge, and over voltage protection
+We welcome contributions to any phase of development! See our [Contributing Guidelines](#contributing) for details on:
+- Setting up your development environment
+- Code style and testing requirements  
+- Submitting pull requests
+- Hardware testing and validation
 
-#### Phase 5: Advanced Features
-
-- Multi-device connection management
-- Real-time latency optimization
-- Mobile app for configuration
+For questions about the roadmap or to suggest new features, please open a GitHub issue.
 
 ## Contributing
 
