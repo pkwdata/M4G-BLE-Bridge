@@ -2,12 +2,14 @@ mainmenu "Espressif IoT Development Framework Configuration"
 
 source "$IDF_PATH/Kconfig"
 
-menu "M4G Bridge Options"
+menu "M4G Bridge Configuration"
 
-# Include settings component Kconfig first for easy access
-rsource "components/m4g_settings/Kconfig"
+menu "Runtime Settings (NVS Configurable)"
+	comment "These settings can be changed at runtime and are stored in NVS"
+	rsource "components/m4g_settings/Kconfig"
+endmenu
 
-menu "Platform Configuration"
+menu "Hardware Platform"
 	comment "Platform selection determines USB host controller and BLE stack"
 
 	choice M4G_TARGET
@@ -78,18 +80,99 @@ menu "Platform Configuration"
 			default 0
 			help
 				nRF52840 SPI instance to use for MAX3421E communication.
-	endmenu
-endmenu
+	endmenu  # nRF52840 + MAX3421E Configuration
+endmenu  # Hardware Platform
 
-config M4G_ENABLE_ARROW_MOUSE
-	bool "Enable arrow keys -> mouse movement mapping"
-	default y
-	help
-		When enabled, the bridge will translate arrow keys into relative mouse
-		movements. Disable to pass arrow keys through unchanged.
+menu "USB Host Configuration"
+	config M4G_USB_ENUMERATION_TIMEOUT_MS
+		int "USB enumeration timeout (ms)"
+		range 500 5000
+		default 1000
+		help
+			Timeout for USB device enumeration. Increase for problematic devices or hubs.
+			CharaChorder dual-half keyboards may need longer timeout.
 
-menu "Mouse Movement Configuration"
-	depends on M4G_ENABLE_ARROW_MOUSE
+	config M4G_USB_POLL_PERIOD_MS
+		int "USB host polling period (ms)"
+		range 10 500
+		default 100
+		help
+			Period for USB host library event processing. Lower values provide better
+			responsiveness but consume more CPU. 100ms is a good balance.
+
+	config M4G_USB_DEBOUNCE_DELAY_MS
+		int "USB device debounce delay (ms)"
+		range 10 200
+		default 50
+		help
+			Delay after USB device detection before attempting enumeration.
+			Helps with device stability during connection.
+
+	config M4G_USB_CHARACHORDER_VENDOR_ID
+		hex "CharaChorder HID vendor ID"
+		default 0x303A
+		help
+			USB vendor ID used by CharaChorder halves. When combined with detection of the
+			built-in hub, this enables the bridge to require both halves before reporting
+			the USB side as connected. Set to 0 to disable automatic detection.
+
+	config M4G_USB_CHARACHORDER_PRODUCT_ID
+		hex "CharaChorder HID product ID"
+		default 0xFFFF
+		help
+			USB product ID used by CharaChorder halves. Set to 0xFFFF to treat the product
+			ID as a wildcard (any product belonging to the specified vendor).
+endmenu  # USB Host Configuration
+
+menu "BLE Configuration"
+	config M4G_BLE_DEVICE_NAME
+		string "BLE device name"
+		default "M4G-BLE-Bridge"
+		help
+			Name advertised by the BLE bridge. This name will appear when scanning
+			for Bluetooth devices on the host computer.
+
+	config M4G_BLE_MANUFACTURER_NAME
+		string "BLE manufacturer name"
+		default "M4G Bridge"
+		help
+			Manufacturer name reported in BLE device information service.
+
+	config M4G_BLE_CONN_INTERVAL_MIN_MS
+		int "BLE connection interval minimum (ms)"
+		range 7 4000
+		default 20
+		help
+			Minimum BLE connection interval in milliseconds. Lower values provide
+			better latency but consume more power. 20ms is optimal for HID devices.
+
+	config M4G_BLE_CONN_INTERVAL_MAX_MS
+		int "BLE connection interval maximum (ms)"
+		range 7 4000
+		default 40
+		help
+			Maximum BLE connection interval in milliseconds. Should be >= minimum.
+			40ms provides good balance of latency and power consumption.
+
+	config M4G_CLEAR_BONDING_ON_BOOT
+		bool "Clear BLE bonding data on startup"
+		default n
+		help
+			If enabled, clears all stored BLE bonding keys on every boot, forcing fresh pairing.
+			Only enable this temporarily to resolve persistent connection issues.
+			Normal operation should keep this disabled to allow reconnection.
+endmenu  # BLE Configuration
+
+menu "Keyboard & Mouse Features"
+	config M4G_ENABLE_ARROW_MOUSE
+		bool "Enable arrow keys -> mouse movement mapping"
+		default y
+		help
+			When enabled, the bridge will translate arrow keys into relative mouse
+			movements. Disable to pass arrow keys through unchanged.
+
+	menu "Mouse Movement Configuration"
+		depends on M4G_ENABLE_ARROW_MOUSE
 
 	config M4G_MOUSE_BASE_SPEED
 		int "Base mouse movement speed (pixels)"
@@ -133,16 +216,16 @@ menu "Mouse Movement Configuration"
 		help
 			Maximum movement speed in pixels, regardless of how long the key
 			is held. Prevents overly fast cursor movement.
-endmenu
+	endmenu  # Mouse Movement Configuration
 
-config M4G_ENABLE_DUPLICATE_SUPPRESSION
-	bool "Suppress duplicate consecutive HID reports"
-	default y
-	help
-		When enabled, identical consecutive keyboard/mouse reports will not be
-		re-sent over BLE to reduce bandwidth and power consumption.
+	config M4G_ENABLE_DUPLICATE_SUPPRESSION
+		bool "Suppress duplicate consecutive HID reports"
+		default y
+		help
+			When enabled, identical consecutive keyboard/mouse reports will not be
+			re-sent over BLE to reduce bandwidth and power consumption.
 
-menu "Key Repeat Configuration"
+	menu "Key Repeat Configuration"
 	config M4G_ENABLE_KEY_REPEAT
 		bool "Enable key repeat for held keys"
 		default y
@@ -178,10 +261,10 @@ menu "Key Repeat Configuration"
 			Time interval in milliseconds between repeated keypresses once
 			repeat has started. 33ms = ~30 repetitions per second.
 			Standard keyboard behavior is typically 30-50ms.
-endmenu
+	endmenu  # Key Repeat Configuration
 
-menu "CharaChorder Configuration"
-	config M4G_CHARACHORDER_CHORD_TIMEOUT_MS
+	menu "CharaChorder Configuration"
+		config M4G_CHARACHORDER_CHORD_TIMEOUT_MS
 		int "Single-key chord timeout (ms)"
 		range 50 1000
 		default 500
@@ -193,7 +276,7 @@ menu "CharaChorder Configuration"
 			chord detection. Typical chords are pressed within 50-150ms.
 			Recommended: 100-200ms for comfortable chord detection.
 
-	config M4G_CHARACHORDER_CHORD_DELAY_MS
+		config M4G_CHARACHORDER_CHORD_DELAY_MS
 		int "CharaChorder chord processing grace period (ms)"
 		range 5 500
 		default 15
@@ -202,247 +285,181 @@ menu "CharaChorder Configuration"
 			physical keys are released. This allows the CharaChorder firmware to emit
 			expanded text before the bridge falls back to single-key replay.
 
-	config M4G_CHARACHORDER_REQUIRE_BOTH_HALVES
+		config M4G_CHARACHORDER_REQUIRE_BOTH_HALVES
 		bool "Require both CharaChorder halves for connection"
 		default y
 		help
 			When enabled, the USB side is only considered "connected" when both
 			CharaChorder halves have been detected.
 
-	config M4G_CHARACHORDER_RAW_MODE
+		config M4G_CHARACHORDER_RAW_MODE
 		bool "CharaChorder raw passthrough (disable chord buffering)"
 		default n
 		help
 			Skip chord buffering and forward raw key reports immediately. Useful for
 			debugging or specialized workflows where the host should see raw finger
 			positions.
-endmenu
+	endmenu  # CharaChorder Configuration
+endmenu  # Keyboard & Mouse Features
 
-config M4G_LOG_PERSISTENCE
-	bool "Persist logs to NVS"
-	default y if M4G_BOARD_QTPY
-	default n if M4G_BOARD_DEVKIT
-	help
-		Controls whether logs are appended to an NVS blob for retrieval on next boot.
-		Default: enabled for QT Py board, disabled for DevKit.
+menu "Power Management & Battery"
+	config M4G_IDLE_SLEEP_TIMEOUT_MS
+		int "Idle light-sleep timeout (ms)"
+		range 0 3600000
+		default 60000
+		help
+			If >0, when there is no BLE connection and no USB HID devices for this duration, the
+			system will enter light sleep to save power until a wake source triggers.
+			Set to 0 to disable automatic sleep.
+	
+	comment "Additional battery management features coming in future releases"
+	comment "See docs/development_roadmap.md Phase 1 for details"
+endmenu  # Power Management & Battery
 
-config M4G_ASSERT_BLE_HANDLE
-	bool "Assert BLE report handle resolved"
-	default y
-	help
-		If enabled, sending a report before the characteristic handle is resolved
-		triggers an assert (development aid). Disable in production builds.
+menu "LED & Visual Feedback"
+	menu "Board-Specific LED Configuration"
+		depends on M4G_TARGET_ESP32S3
+		comment "Board selection sets GPIO defaults for LEDs and USB"
 
-config M4G_CLEAR_BONDING_ON_BOOT
-	bool "Clear BLE bonding data on startup"
-	default n
-	help
-		If enabled, clears all stored BLE bonding keys on every boot, forcing fresh pairing.
-		Only enable this temporarily to resolve persistent connection issues.
-		Normal operation should keep this disabled to allow reconnection.
+		choice M4G_BOARD_SELECT
+			prompt "Target board"
+			default M4G_BOARD_DEVKIT
+			help
+				Select the ESP32-S3 hardware variant to apply sensible defaults for GPIOs.
+				This primarily affects LED pin assignments and power control.
 
-config M4G_STACK_WATERMARK_PERIOD_MS
-	int "Stack watermark log period (ms)"
-	range 0 600000
-	default 30000
-	help
-		Period for logging stack high-water marks. 0 disables periodic logging.
-		Useful for debugging memory usage and preventing stack overflows.
+		config M4G_BOARD_DEVKIT
+			bool "ESP32-S3 DevKit"
+			help
+				Standard ESP32-S3 development board with full GPIO access.
+				NeoPixel LED on GPIO 48 (typical for DevKitC).
 
-config M4G_STACK_WATERMARK_MAX_TASKS
-	int "Max tasks tracked for stack watermark"
-	range 4 64
-	default 24
-	help
-		Maximum number of tasks whose high-water marks are sampled (static array size).
+		config M4G_BOARD_QTPY
+			bool "Adafruit QT Py ESP32-S3"
+			help
+				Compact Adafruit QT Py board with ESP32-S3.
+				NeoPixel LED on GPIO 38, limited GPIO availability.
 
-config M4G_IDLE_SLEEP_TIMEOUT_MS
-	int "Idle light-sleep timeout (ms)"
-	range 0 3600000
-	default 60000
-	help
-		If >0, when there is no BLE connection and no USB HID devices for this duration, the
-		system will enter light sleep to save power until a wake source triggers.
-		Set to 0 to disable automatic sleep.
+		endchoice
 
-config M4G_ENABLE_DIAG_GATT
-	bool "Enable diagnostic GATT characteristic"
-	default y
-	help
-		Adds a diagnostic characteristic that returns a system status snapshot when read.
-		Useful for remote debugging and monitoring.
+		choice M4G_LED_TYPE
+			prompt "LED type"
+			default M4G_LED_TYPE_NEOPIXEL if M4G_BOARD_DEVKIT
+			default M4G_LED_TYPE_NEOPIXEL if M4G_BOARD_QTPY
+			help
+				Select style of status LED.
+			config M4G_LED_TYPE_NONE
+				bool "None"
+			config M4G_LED_TYPE_SIMPLE
+				bool "Simple GPIO (future)"
+			config M4G_LED_TYPE_NEOPIXEL
+				bool "NeoPixel / WS2812"
+		endchoice
 
-config M4G_DIAG_TASK_STACK_SIZE
-	int "Diagnostics task stack size (bytes)"
-	depends on M4G_ENABLE_DIAG_GATT
-	range 1024 8192
-	default 4096
-	help
-		Stack size for the optional diagnostics periodic task (m4g_diag). Increase if you
-		see stack overflow logs referencing the m4g_diag task.
-		Only applies when diagnostic GATT characteristic is enabled.
+		config M4G_LED_DATA_GPIO
+			int "LED data GPIO"
+			depends on !M4G_LED_TYPE_NONE
+			default 48 if M4G_BOARD_DEVKIT
+			default 38 if M4G_BOARD_QTPY
+			range 0 48
+			help
+				GPIO output driving the status LED (NeoPixel or single LED).
 
-menu "Board Configuration"
-	depends on M4G_TARGET_ESP32S3
-	comment "Board selection sets GPIO defaults for LEDs and USB"
+		config M4G_LED_POWER_GPIO
+			int "LED power enable GPIO (-1 to disable)"
+			depends on !M4G_LED_TYPE_NONE
+			default -1 if M4G_BOARD_DEVKIT
+			default -1 if M4G_BOARD_QTPY
+			default -1
+			range -1 48
+			help
+				Optional power/enable pin for LED. Set -1 if not used.
 
-choice M4G_BOARD_SELECT
-	prompt "Target board"
-	default M4G_BOARD_DEVKIT
-	help
-		Select the ESP32-S3 hardware variant to apply sensible defaults for GPIOs.
-		This primarily affects LED pin assignments and power control.
+		config M4G_VBUS_ENABLE_GPIO
+			int "VBUS enable GPIO (-1 if none)"
+			default -1
+			range -1 48
+			help
+				Optional GPIO controlling a load switch to source 5V for USB host. -1 disables.
+	endmenu  # Board-Specific LED Configuration
+	
+	comment "LED control API and effects coming in future releases"
+	comment "See docs/development_roadmap.md Phase 3 for details"
+endmenu  # LED & Visual Feedback
 
-config M4G_BOARD_DEVKIT
-	bool "ESP32-S3 DevKit"
-	help
-		Standard ESP32-S3 development board with full GPIO access.
-		NeoPixel LED on GPIO 48 (typical for DevKitC).
+menu "Logging & Diagnostics"
+	config M4G_LOG_PERSISTENCE
+		bool "Persist logs to NVS"
+		default y if M4G_BOARD_QTPY
+		default n if M4G_BOARD_DEVKIT
+		help
+			Controls whether logs are appended to an NVS blob for retrieval on next boot.
+			Default: enabled for QT Py board, disabled for DevKit.
 
-config M4G_BOARD_QTPY
-	bool "Adafruit QT Py ESP32-S3"
-	help
-		Compact Adafruit QT Py board with ESP32-S3.
-		NeoPixel LED on GPIO 38, limited GPIO availability.
+	config M4G_LOG_BUFFER_SIZE
+		int "In-RAM log staging buffer size (bytes)"
+		depends on M4G_LOG_PERSISTENCE
+		range 256 4096
+		default 1024
+		help
+			Size of the RAM buffer used to stage log lines before flushing to NVS.
 
-endchoice
+	config M4G_LOG_FLUSH_THRESHOLD
+		int "Flush threshold (bytes)"
+		depends on M4G_LOG_PERSISTENCE
+		range 64 4096
+		default 512
+		help
+			When the staging buffer reaches this many bytes, it will be flushed to NVS.
 
-choice M4G_LED_TYPE
-	prompt "LED type"
-	default M4G_LED_TYPE_NEOPIXEL if M4G_BOARD_DEVKIT
-	default M4G_LED_TYPE_NEOPIXEL if M4G_BOARD_QTPY
-	help
-		Select style of status LED.
-	config M4G_LED_TYPE_NONE
-		bool "None"
-	config M4G_LED_TYPE_SIMPLE
-		bool "Simple GPIO (future)"
-	config M4G_LED_TYPE_NEOPIXEL
-		bool "NeoPixel / WS2812"
-endchoice
+	config M4G_ENABLE_DIAG_GATT
+		bool "Enable diagnostic GATT characteristic"
+		default y
+		help
+			Adds a diagnostic characteristic that returns a system status snapshot when read.
+			Useful for remote debugging and monitoring.
 
-config M4G_LED_DATA_GPIO
-	int "LED data GPIO"
-	depends on !M4G_LED_TYPE_NONE
-	default 48 if M4G_BOARD_DEVKIT
-	default 38 if M4G_BOARD_QTPY
-	range 0 48
-	help
-		GPIO output driving the status LED (NeoPixel or single LED).
+	config M4G_DIAG_TASK_STACK_SIZE
+		int "Diagnostics task stack size (bytes)"
+		depends on M4G_ENABLE_DIAG_GATT
+		range 1024 8192
+		default 4096
+		help
+			Stack size for the optional diagnostics periodic task (m4g_diag). Increase if you
+			see stack overflow logs referencing the m4g_diag task.
+			Only applies when diagnostic GATT characteristic is enabled.
 
-config M4G_LED_POWER_GPIO
-	int "LED power enable GPIO (-1 to disable)"
-	depends on !M4G_LED_TYPE_NONE
-	default -1 if M4G_BOARD_DEVKIT
-	default -1 if M4G_BOARD_QTPY
-	default -1
-	range -1 48
-	help
-		Optional power/enable pin for LED. Set -1 if not used.
+	config M4G_STACK_WATERMARK_PERIOD_MS
+		int "Stack watermark log period (ms)"
+		range 0 600000
+		default 30000
+		help
+			Period for logging stack high-water marks. 0 disables periodic logging.
+			Useful for debugging memory usage and preventing stack overflows.
 
-config M4G_VBUS_ENABLE_GPIO
-	int "VBUS enable GPIO (-1 if none)"
-	default -1
-	range -1 48
-	help
-		Optional GPIO controlling a load switch to source 5V for USB host. -1 disables.
+	config M4G_STACK_WATERMARK_MAX_TASKS
+		int "Max tasks tracked for stack watermark"
+		range 4 64
+		default 24
+		help
+			Maximum number of tasks whose high-water marks are sampled (static array size).
+endmenu  # Logging & Diagnostics
 
-endmenu  # Board Configuration
+menu "Developer Options"
+	config M4G_ASSERT_BLE_HANDLE
+		bool "Assert BLE report handle resolved"
+		default y
+		help
+			If enabled, sending a report before the characteristic handle is resolved
+			triggers an assert (development aid). Disable in production builds.
 
-menu "Advanced Configuration"
+	config M4G_MAIN_TASK_STACK_SIZE
+		int "Main task stack size (bytes)"
+		range 8192 32768
+		default 16384
+		help
+			Stack size for the main application task. Should be sufficient for USB enumeration
+			complexity and BLE stack operations. 16384 is recommended for USB host functionality.
+endmenu  # Developer Options
 
-config M4G_LOG_BUFFER_SIZE
-	int "In-RAM log staging buffer size (bytes)"
-	depends on M4G_LOG_PERSISTENCE
-	range 256 4096
-	default 1024
-	help
-		Size of the RAM buffer used to stage log lines before flushing to NVS.
-
-config M4G_LOG_FLUSH_THRESHOLD
-	int "Flush threshold (bytes)"
-	depends on M4G_LOG_PERSISTENCE
-	range 64 4096
-	default 512
-	help
-		When the staging buffer reaches this many bytes, it will be flushed to NVS.
-
-config M4G_USB_ENUMERATION_TIMEOUT_MS
-	int "USB enumeration timeout (ms)"
-	range 500 5000
-	default 1000
-	help
-		Timeout for USB device enumeration. Increase for problematic devices or hubs.
-		CharaChorder dual-half keyboards may need longer timeout.
-
-config M4G_USB_POLL_PERIOD_MS
-	int "USB host polling period (ms)"
-	range 10 500
-	default 100
-	help
-		Period for USB host library event processing. Lower values provide better
-		responsiveness but consume more CPU. 100ms is a good balance.
-
-config M4G_USB_DEBOUNCE_DELAY_MS
-	int "USB device debounce delay (ms)"
-	range 10 200
-	default 50
-	help
-		Delay after USB device detection before attempting enumeration.
-		Helps with device stability during connection.
-
-config M4G_USB_CHARACHORDER_VENDOR_ID
-	hex "CharaChorder HID vendor ID"
-	default 0x303A
-	help
-		USB vendor ID used by CharaChorder halves. When combined with detection of the
-		built-in hub, this enables the bridge to require both halves before reporting
-		the USB side as connected. Set to 0 to disable automatic detection.
-
-config M4G_USB_CHARACHORDER_PRODUCT_ID
-	hex "CharaChorder HID product ID"
-	default 0xFFFF
-	help
-		USB product ID used by CharaChorder halves. Set to 0xFFFF to treat the product
-		ID as a wildcard (any product belonging to the specified vendor).
-
-config M4G_BLE_DEVICE_NAME
-	string "BLE device name"
-	default "M4G-BLE-Bridge"
-	help
-		Name advertised by the BLE bridge. This name will appear when scanning
-		for Bluetooth devices on the host computer.
-
-config M4G_BLE_MANUFACTURER_NAME
-	string "BLE manufacturer name"
-	default "M4G Bridge"
-	help
-		Manufacturer name reported in BLE device information service.
-
-config M4G_BLE_CONN_INTERVAL_MIN_MS
-	int "BLE connection interval minimum (ms)"
-	range 7 4000
-	default 20
-	help
-		Minimum BLE connection interval in milliseconds. Lower values provide
-		better latency but consume more power. 20ms is optimal for HID devices.
-
-config M4G_BLE_CONN_INTERVAL_MAX_MS
-	int "BLE connection interval maximum (ms)"
-	range 7 4000
-	default 40
-	help
-		Maximum BLE connection interval in milliseconds. Should be >= minimum.
-		40ms provides good balance of latency and power consumption.
-
-config M4G_MAIN_TASK_STACK_SIZE
-	int "Main task stack size (bytes)"
-	range 8192 32768
-	default 16384
-	help
-		Stack size for the main application task. Should be sufficient for USB enumeration
-		complexity and BLE stack operations. 16384 is recommended for USB host functionality.
-
-endmenu  # Advanced Configuration
-
-endmenu  # M4G Bridge Options
+endmenu  # M4G Bridge Configuration
