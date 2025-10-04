@@ -126,7 +126,6 @@ void app_main(void)
             continue;
         }
         last_heartbeat = now;
-
         if (m4g_log_persistence_enabled())
         {
             m4g_log_flush();

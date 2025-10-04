@@ -138,7 +138,6 @@ static bool use_chord_for_state(const combined_state_t *state);
 static void emit_keyboard_state(uint8_t modifiers, const uint8_t keys[6], bool allow_mouse, int mx, int my);
 static void chord_buffer_reset(void);
 static void chord_buffer_add(const combined_state_t *state);
-static void send_buffered_single_key(void);
 
 static size_t extract_chara_keys(const uint8_t *kb_payload, size_t len, uint8_t *out6, bool is_charachorder)
 {
@@ -722,56 +721,6 @@ static void emit_keyboard_state(uint8_t modifiers, const uint8_t keys[6], bool a
 #endif
 }
 
-static void send_buffered_single_key(void)
-{
-  bool have_key = (s_chord_buffer_len > 0);
-  bool have_modifier = (s_chord_buffer_modifiers != 0);
-  if (!have_key && !have_modifier)
-    return;
-
-  uint8_t keys[6] = {0};
-  int mx = 0, my = 0;
-
-#ifdef CONFIG_M4G_ENABLE_ARROW_MOUSE
-  // Check if the buffered key is a mouse key
-  if (have_key)
-  {
-    switch (s_chord_buffer[0])
-    {
-    case 0x29: // Escape - Mouse Up
-      my = -10;
-      break;
-    case 0x2A: // Backspace - Mouse Down
-      my = 10;
-      break;
-    case 0x38: // Forward Slash - Mouse Left
-      mx = -10;
-      break;
-    case 0x2E: // Period - Mouse Right
-      mx = 10;
-      break;
-    default:
-      keys[0] = s_chord_buffer[0];
-      break;
-    }
-  }
-#else
-  if (have_key)
-    keys[0] = s_chord_buffer[0];
-#endif
-
-  if (ENABLE_DEBUG_KEYPRESS_LOGGING)
-  {
-    LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
-                 "Single-key fallback: mod=0x%02X key=0x%02X mx=%d my=%d",
-                 s_chord_buffer_modifiers, keys[0], mx, my);
-  }
-
-  emit_keyboard_state(s_chord_buffer_modifiers, keys, true, mx, my);
-  uint8_t empty[6] = {0};
-  emit_keyboard_state(0, empty, true, 0, 0);
-}
-
 static void process_combined_state(const combined_state_t *state)
 {
   if (!state)
@@ -837,10 +786,10 @@ static void process_combined_state(const combined_state_t *state)
       chord_buffer_reset();
       chord_buffer_add(state);
       s_chord_state = CHORD_STATE_COLLECTING;
-      s_chord_collect_start_tick = now; // Track when collection started
+      s_chord_collect_start_tick = now;
 
-// Stop any active key repeat when entering chord collection
 #ifdef CONFIG_M4G_ENABLE_KEY_REPEAT
+      // Stop any active key repeat when entering chord collection
       s_last_key = 0;
       s_repeat_started = false;
 #endif
@@ -851,6 +800,18 @@ static void process_combined_state(const combined_state_t *state)
                      "Chord collecting started (keys=%u)", (unsigned)state->key_count);
       }
     }
+#ifdef CONFIG_M4G_ENABLE_KEY_REPEAT
+    else if (s_last_key != 0)
+    {
+      // Key is being tracked for repeat - don't emit release yet
+      // The repeat system will handle it when key actually releases
+      if (ENABLE_DEBUG_KEYPRESS_LOGGING)
+      {
+        LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
+                     "Suppressing IDLE release - key repeat active for 0x%02X", s_last_key);
+      }
+    }
+#endif
     else
     {
       // No activity in IDLE state - this is a key release, pass it through
@@ -972,32 +933,15 @@ static void process_combined_state(const combined_state_t *state)
     if (delta > pdMS_TO_TICKS(M4G_CHORD_OUTPUT_GRACE_MS))
     {
       // Timeout - CharaChorder didn't output anything, so this wasn't a chord
-      // Send the buffered key(s) as regular keypresses
-      if (s_chord_buffer_len == 1 || s_chord_buffer_modifiers != 0)
+      // For multi-key combinations or held single keys, just discard the buffer
+      // (user attempted a chord but it didn't match anything)
+      if (ENABLE_DEBUG_KEYPRESS_LOGGING)
       {
-        send_buffered_single_key();
-        if (ENABLE_DEBUG_KEYPRESS_LOGGING)
-        {
-          LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
-                       "Timeout - sending buffered key (not a chord)");
-        }
+        LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
+                     "Timeout - discarding %u buffered key(s) (failed chord attempt)",
+                     (unsigned)s_chord_buffer_len);
       }
-      else if (s_chord_buffer_len > 1)
-      {
-        // Multiple keys but no chord output - send them individually
-        for (size_t i = 0; i < s_chord_buffer_len; ++i)
-        {
-          uint8_t keys[6] = {s_chord_buffer[i], 0, 0, 0, 0, 0};
-          emit_keyboard_state(s_chord_buffer_modifiers, keys, true, 0, 0);
-          uint8_t empty[6] = {0};
-          emit_keyboard_state(0, empty, true, 0, 0);
-        }
-        if (ENABLE_DEBUG_KEYPRESS_LOGGING)
-        {
-          LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
-                       "Timeout - sending %u buffered keys individually", (unsigned)s_chord_buffer_len);
-        }
-      }
+
       chord_buffer_reset();
       s_chord_state = CHORD_STATE_IDLE;
       s_output_sequence_active = false;
@@ -1212,31 +1156,43 @@ void m4g_bridge_process_key_repeat(void)
 
     if (collect_duration >= pdMS_TO_TICKS(chord_timeout_ms))
     {
-      // Timeout expired - emit the buffered key and go to IDLE
-      s_chord_state = CHORD_STATE_IDLE;
-
+      // Timeout expired - transition to a special "HELD" state for single keys
       // Build the key array from buffer
       uint8_t keys[6] = {0};
+      uint8_t held_key = 0;
+      uint8_t held_modifiers = 0;
+
       if (s_chord_buffer_len > 0)
       {
-        keys[0] = s_chord_buffer[0];
+        held_key = s_chord_buffer[0];
+        held_modifiers = s_chord_buffer_modifiers;
+        keys[0] = held_key;
       }
 
-      // Emit the key normally - this will start the repeat tracking
-      emit_keyboard_state(s_chord_buffer_modifiers, keys, true, 0, 0);
+      // Emit the key and immediately set up repeat tracking
+      emit_keyboard_state(held_modifiers, keys, true, 0, 0);
 
-      chord_buffer_reset(); // Clear the buffer so key release can be detected
+      // CRITICAL: Clear the chord buffer and go to IDLE state
+      // This allows process_combined_state to detect key release properly
+      chord_buffer_reset();
+      s_chord_state = CHORD_STATE_IDLE;
+
+      // Manually set up repeat tracking since we just emitted
+      s_last_key = held_key;
+      s_last_modifiers = held_modifiers;
+      s_last_key_press_time = now;
+      s_repeat_started = false;
 
       if (ENABLE_DEBUG_KEYPRESS_LOGGING)
       {
         LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
-                     "Single-key held (%ums) - emitting for repeat (key=0x%02X)",
-                     chord_timeout_ms, keys[0]);
+                     "Single-key held (%ums) - emitting for repeat (key=0x%02X, transitioning to IDLE for repeat tracking)",
+                     chord_timeout_ms, held_key);
       }
     }
   }
 
-  // Only process if a key is currently held
+  // Only process repeat if a key is currently held
   if (s_last_key == 0)
   {
     s_repeat_started = false;
