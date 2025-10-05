@@ -124,13 +124,13 @@ static size_t s_chord_key_count_peak = 0;     // Max keys pressed simultaneously
 
 #ifdef CONFIG_M4G_ENABLE_KEY_REPEAT
 // Key repeat state
-static uint8_t s_last_key = 0;                // Last non-zero key pressed
-static uint8_t s_last_modifiers = 0;          // Modifiers for last key
-static TickType_t s_last_key_press_time = 0;  // When key was first pressed
-static TickType_t s_last_repeat_time = 0;     // When last repeat was sent
-static bool s_repeat_started = false;         // Whether we've started repeating
-static bool s_in_repeat_emit = false;         // Flag to prevent recursion
-static bool s_repeat_active = false;          // Whether repeat logic is currently bypassing chord mode
+static uint8_t s_last_key = 0;               // Last non-zero key pressed
+static uint8_t s_last_modifiers = 0;         // Modifiers for last key
+static TickType_t s_last_key_press_time = 0; // When key was first pressed
+static TickType_t s_last_repeat_time = 0;    // When last repeat was sent
+static bool s_repeat_started = false;        // Whether we've started repeating
+static bool s_in_repeat_emit = false;        // Flag to prevent recursion
+static bool s_repeat_active = false;         // Whether repeat logic is currently bypassing chord mode
 static bool s_repeat_cancel_pending = false; // Release observed while repeat emit in progress
 #endif
 
@@ -993,7 +993,7 @@ static void process_combined_state(const combined_state_t *state)
         s_last_modifiers = 0;
         s_repeat_started = false;
         s_repeat_active = false;
-  s_repeat_cancel_pending = false;
+        s_repeat_cancel_pending = false;
 #endif
       }
       else
