@@ -3,6 +3,7 @@
 #include "m4g_logging.h"
 #include "m4g_settings.h"
 #include <string.h>
+#include <inttypes.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "sdkconfig.h"
@@ -123,13 +124,14 @@ static size_t s_chord_key_count_peak = 0;     // Max keys pressed simultaneously
 
 #ifdef CONFIG_M4G_ENABLE_KEY_REPEAT
 // Key repeat state
-static uint8_t s_last_key = 0;               // Last non-zero key pressed
-static uint8_t s_last_modifiers = 0;         // Modifiers for last key
-static TickType_t s_last_key_press_time = 0; // When key was first pressed
-static TickType_t s_last_repeat_time = 0;    // When last repeat was sent
-static bool s_repeat_started = false;        // Whether we've started repeating
-static bool s_in_repeat_emit = false;        // Flag to prevent recursion
-static bool s_repeat_active = false;         // Whether repeat logic is currently bypassing chord mode
+static uint8_t s_last_key = 0;                // Last non-zero key pressed
+static uint8_t s_last_modifiers = 0;          // Modifiers for last key
+static TickType_t s_last_key_press_time = 0;  // When key was first pressed
+static TickType_t s_last_repeat_time = 0;     // When last repeat was sent
+static bool s_repeat_started = false;         // Whether we've started repeating
+static bool s_in_repeat_emit = false;         // Flag to prevent recursion
+static bool s_repeat_active = false;          // Whether repeat logic is currently bypassing chord mode
+static bool s_repeat_cancel_pending = false; // Release observed while repeat emit in progress
 #endif
 
 static void compute_combined_state(combined_state_t *state);
@@ -141,6 +143,8 @@ static void chord_buffer_reset(void);
 static void chord_buffer_add(const combined_state_t *state);
 #ifdef CONFIG_M4G_ENABLE_KEY_REPEAT
 static void emit_repeat_cycle(uint8_t key, uint8_t modifiers);
+static bool is_key_currently_active(uint8_t key);
+static bool start_repeat_from_held_key(TickType_t now, TickType_t collect_duration, uint32_t repeat_delay_ms);
 #endif
 
 static size_t extract_chara_keys(const uint8_t *kb_payload, size_t len, uint8_t *out6, bool is_charachorder)
@@ -538,6 +542,16 @@ esp_err_t m4g_bridge_init(void)
   s_warned_invalid_slot = false;
   s_chord_processed = 0;
   s_chord_delayed = 0;
+#ifdef CONFIG_M4G_ENABLE_KEY_REPEAT
+  s_last_key = 0;
+  s_last_modifiers = 0;
+  s_last_key_press_time = 0;
+  s_last_repeat_time = 0;
+  s_repeat_started = false;
+  s_in_repeat_emit = false;
+  s_repeat_active = false;
+  s_repeat_cancel_pending = false;
+#endif
   return ESP_OK;
 }
 
@@ -692,6 +706,7 @@ static void emit_keyboard_state(uint8_t modifiers, const uint8_t keys[6], bool a
       s_last_key = 0; // Disable repeat
       s_repeat_started = false;
       s_repeat_active = false;
+      s_repeat_cancel_pending = false;
       if (ENABLE_DEBUG_KEYPRESS_LOGGING)
       {
         LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
@@ -701,18 +716,38 @@ static void emit_keyboard_state(uint8_t modifiers, const uint8_t keys[6], bool a
     // Check if key changed or released
     else if (current_key != s_last_key || modifiers != s_last_modifiers)
     {
+      if (current_key == 0)
+      {
+        // Zero state update should simply clear repeat tracking
+        s_last_key = 0;
+        s_last_modifiers = 0;
+        s_repeat_started = false;
+        s_repeat_active = false;
+        s_last_key_press_time = now;
+        s_repeat_cancel_pending = true;
+
+        if (ENABLE_DEBUG_KEYPRESS_LOGGING)
+        {
+          LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
+                       "Repeat tracking cleared on key release");
+        }
+        return;
+      }
+
       if (ENABLE_DEBUG_KEYPRESS_LOGGING)
       {
         LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
                      "Key state change: last=0x%02X current=0x%02X repeat_started=%d",
                      s_last_key, current_key, s_repeat_started);
       }
-      // Key changed - reset repeat state
+      // Key changed - reset repeat state before updating tracking
+      s_repeat_started = false;
+      s_repeat_active = false;
+
       s_last_key = current_key;
       s_last_modifiers = modifiers;
       s_last_key_press_time = now;
-      s_repeat_started = false;
-      s_repeat_active = false;
+      s_repeat_cancel_pending = false;
     }
     // Same key still held - keep original press time
   }
@@ -748,9 +783,28 @@ static void process_combined_state(const combined_state_t *state)
     use_chord = false;
   }
 
-  if (!has_keys)
+  if (s_repeat_active && !has_keys)
   {
+    // Immediate release when repeat was active but no keys remain
+    uint8_t empty_keys[6] = {0};
+    s_repeat_cancel_pending = true;
+    emit_keyboard_state(s_last_modifiers, empty_keys, true, 0, 0);
+
+    chord_buffer_reset();
+    s_chord_state = CHORD_STATE_IDLE;
+    s_expect_output_tick = now;
+    s_last_key = 0;
+    s_last_modifiers = 0;
+    s_repeat_started = false;
     s_repeat_active = false;
+
+    if (ENABLE_DEBUG_KEYPRESS_LOGGING)
+    {
+      LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
+                   "Repeat release detected in combine - buffer cleared");
+    }
+
+    return;
   }
 #endif
 
@@ -763,7 +817,6 @@ static void process_combined_state(const combined_state_t *state)
 
   // Track multi-key sequences for backspace filtering (works in both chord and RAW mode)
   static size_t s_last_key_count = 0;
-
   if (state->any_charachorder)
   {
     if (state->key_count == 0 && s_last_key_count >= 2)
@@ -820,6 +873,24 @@ static void process_combined_state(const combined_state_t *state)
       }
     }
 #ifdef CONFIG_M4G_ENABLE_KEY_REPEAT
+    else if (s_repeat_active)
+    {
+      // Key released while repeat was active - emit release and reset state
+      uint8_t empty_keys[6] = {0};
+      emit_keyboard_state(s_last_modifiers, empty_keys, true, 0, 0);
+
+      chord_buffer_reset();
+      s_last_key = 0;
+      s_last_modifiers = 0;
+      s_repeat_started = false;
+      s_repeat_active = false;
+
+      if (ENABLE_DEBUG_KEYPRESS_LOGGING)
+      {
+        LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
+                     "Repeat ended - key release forwarded to host");
+      }
+    }
     else if (s_last_key != 0)
     {
       // Key is being tracked for repeat - don't emit release yet
@@ -849,6 +920,33 @@ static void process_combined_state(const combined_state_t *state)
     {
       chord_buffer_add(state);
 
+#ifdef CONFIG_M4G_ENABLE_KEY_REPEAT
+      if (s_chord_buffer_len == 1)
+      {
+        TickType_t collect_duration = now - s_chord_collect_start_tick;
+        uint32_t repeat_delay_ms = m4g_settings_get_key_repeat_delay_ms();
+        uint32_t chord_timeout_ms = m4g_settings_get_chord_timeout_ms();
+        uint32_t hold_threshold_ms = repeat_delay_ms;
+
+        if (hold_threshold_ms == 0 || (chord_timeout_ms > 0 && chord_timeout_ms < hold_threshold_ms))
+        {
+          if (chord_timeout_ms > 0)
+            hold_threshold_ms = chord_timeout_ms;
+        }
+
+        TickType_t hold_threshold_ticks = pdMS_TO_TICKS(hold_threshold_ms);
+
+        if (hold_threshold_ms == 0 || collect_duration >= hold_threshold_ticks)
+        {
+          if (start_repeat_from_held_key(now, collect_duration, repeat_delay_ms))
+          {
+            s_repeat_active = true;
+            return;
+          }
+        }
+      }
+#endif
+
       // If we now have multiple keys, we're definitely in a chord
       if (s_chord_buffer_len >= 2)
       {
@@ -870,7 +968,14 @@ static void process_combined_state(const combined_state_t *state)
       {
         // Quick single keypress - send immediately (press then release)
         uint8_t keys[6] = {s_chord_buffer[0], 0, 0, 0, 0, 0};
+#ifdef CONFIG_M4G_ENABLE_KEY_REPEAT
+        bool prev_repeat_emit = s_in_repeat_emit;
+        s_in_repeat_emit = true;
+#endif
         emit_keyboard_state(s_chord_buffer_modifiers, keys, true, 0, 0);
+#ifdef CONFIG_M4G_ENABLE_KEY_REPEAT
+        s_in_repeat_emit = prev_repeat_emit;
+#endif
         uint8_t empty[6] = {0};
         emit_keyboard_state(0, empty, true, 0, 0); // Send key release
 
@@ -885,8 +990,10 @@ static void process_combined_state(const combined_state_t *state)
 
 #ifdef CONFIG_M4G_ENABLE_KEY_REPEAT
         s_last_key = 0;
+        s_last_modifiers = 0;
         s_repeat_started = false;
         s_repeat_active = false;
+  s_repeat_cancel_pending = false;
 #endif
       }
       else
@@ -900,7 +1007,7 @@ static void process_combined_state(const combined_state_t *state)
 #ifdef CONFIG_M4G_ENABLE_KEY_REPEAT
         if (s_chord_buffer_len == 1)
         {
-          s_repeat_active = true;
+          // Repeat is handled by m4g_bridge_process_key_repeat once buffer is cleared
         }
 #endif
 
@@ -986,7 +1093,7 @@ static void process_combined_state(const combined_state_t *state)
 #ifdef CONFIG_M4G_ENABLE_KEY_REPEAT
         if (s_chord_buffer_len == 1)
         {
-          s_repeat_active = true;
+          // Repeat will be handled by repeat task after new activity processed
         }
 #endif
       }
@@ -1039,11 +1146,47 @@ static void emit_repeat_cycle(uint8_t key, uint8_t modifiers)
   uint8_t press_keys[6] = {key, 0, 0, 0, 0, 0};
 
   s_in_repeat_emit = true;
-
   emit_keyboard_state(modifiers, release_keys, false, 0, 0);
-  emit_keyboard_state(modifiers, press_keys, false, 0, 0);
-
   s_in_repeat_emit = false;
+
+  if (s_repeat_cancel_pending || !s_repeat_active || s_last_key == 0)
+  {
+    s_repeat_cancel_pending = false;
+    s_repeat_started = false;
+    s_repeat_active = false;
+
+    if (ENABLE_DEBUG_KEYPRESS_LOGGING)
+    {
+      LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
+                   "Repeat cycle aborted after release (key=0x%02X)", key);
+    }
+
+    return;
+  }
+
+  if (!is_key_currently_active(key))
+  {
+    s_repeat_cancel_pending = false;
+    s_repeat_started = false;
+    s_repeat_active = false;
+    s_last_key = 0;
+    s_last_modifiers = 0;
+
+    if (ENABLE_DEBUG_KEYPRESS_LOGGING)
+    {
+      LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
+                   "Repeat cycle cancelled - key no longer active (0x%02X)", key);
+    }
+
+    return;
+  }
+
+  s_in_repeat_emit = true;
+  emit_keyboard_state(modifiers, press_keys, false, 0, 0);
+  s_in_repeat_emit = false;
+
+  s_repeat_cancel_pending = false;
+  s_last_repeat_time = xTaskGetTickCount();
 
   if (ENABLE_DEBUG_KEYPRESS_LOGGING)
   {
@@ -1051,6 +1194,79 @@ static void emit_repeat_cycle(uint8_t key, uint8_t modifiers)
                  "Repeat cycle emitted for key=0x%02X mods=0x%02X", key, modifiers);
   }
 }
+
+static bool is_key_currently_active(uint8_t key)
+{
+  if (key == 0)
+    return false;
+
+  for (uint8_t slot = 0; slot < M4G_BRIDGE_MAX_SLOTS; ++slot)
+  {
+    if (!s_slots[slot].present)
+      continue;
+
+    for (size_t i = 0; i < 6; ++i)
+    {
+      if (s_slots[slot].keys[i] == key)
+        return true;
+    }
+  }
+
+  return false;
+}
+
+static bool start_repeat_from_held_key(TickType_t now, TickType_t collect_duration, uint32_t repeat_delay_ms)
+{
+  if (s_chord_buffer_len != 1)
+    return false;
+
+  uint8_t held_key = s_chord_buffer[0];
+  if (held_key == 0)
+    return false;
+
+  uint8_t held_modifiers = s_chord_buffer_modifiers;
+  uint8_t keys[6] = {held_key, 0, 0, 0, 0, 0};
+
+  emit_keyboard_state(held_modifiers, keys, true, 0, 0);
+
+  chord_buffer_reset();
+  s_chord_state = CHORD_STATE_IDLE;
+
+  TickType_t repeat_delay_ticks = pdMS_TO_TICKS(repeat_delay_ms);
+  if (repeat_delay_ms == 0)
+  {
+    repeat_delay_ticks = 0;
+  }
+
+  s_last_key = held_key;
+  s_last_modifiers = held_modifiers;
+
+  if (collect_duration >= repeat_delay_ticks)
+  {
+    s_last_key_press_time = now - repeat_delay_ticks;
+  }
+  else
+  {
+    s_last_key_press_time = now - collect_duration;
+  }
+
+  s_last_repeat_time = now;
+  s_repeat_started = false;
+  s_repeat_active = true;
+  s_repeat_cancel_pending = false;
+  s_in_repeat_emit = false;
+
+  if (ENABLE_DEBUG_KEYPRESS_LOGGING)
+  {
+    LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
+                 "Held key promoted to repeat: key=0x%02X delay_ms=%" PRIu32 " held_ms=%" PRIu32,
+                 held_key, repeat_delay_ms,
+                 (uint32_t)pdTICKS_TO_MS(collect_duration));
+  }
+
+  return true;
+}
+
 #endif
 
 void m4g_bridge_get_stats(m4g_bridge_stats_t *out)
@@ -1209,48 +1425,25 @@ void m4g_bridge_process_key_repeat(void)
   TickType_t now = xTaskGetTickCount();
 
   // First, check if a single key has been held long enough to start repeat.
-  // Once the configured repeat delay elapses, treat it as a held key even in chord mode.
+  // Once the hold threshold elapses, treat it as a held key even in chord mode.
   if (s_chord_state == CHORD_STATE_COLLECTING && s_chord_buffer_len == 1)
   {
     TickType_t collect_duration = now - s_chord_collect_start_tick;
     uint32_t repeat_delay_ms = m4g_settings_get_key_repeat_delay_ms();
+    uint32_t chord_timeout_ms = m4g_settings_get_chord_timeout_ms();
+    uint32_t hold_threshold_ms = repeat_delay_ms;
 
-    if (collect_duration >= pdMS_TO_TICKS(repeat_delay_ms))
+    if (hold_threshold_ms == 0 || (chord_timeout_ms > 0 && chord_timeout_ms < hold_threshold_ms))
     {
-      // Timeout expired - transition to a special "HELD" state for single keys
-      // Build the key array from buffer
-      uint8_t keys[6] = {0};
-      uint8_t held_key = 0;
-      uint8_t held_modifiers = 0;
+      if (chord_timeout_ms > 0)
+        hold_threshold_ms = chord_timeout_ms;
+    }
 
-      if (s_chord_buffer_len > 0)
-      {
-        held_key = s_chord_buffer[0];
-        held_modifiers = s_chord_buffer_modifiers;
-        keys[0] = held_key;
-      }
+    TickType_t hold_threshold_ticks = pdMS_TO_TICKS(hold_threshold_ms);
 
-      // Emit the key and immediately set up repeat tracking
-      emit_keyboard_state(held_modifiers, keys, true, 0, 0);
-
-      // CRITICAL: Clear the chord buffer and go to IDLE state
-      // This allows process_combined_state to detect key release properly
-      chord_buffer_reset();
-      s_chord_state = CHORD_STATE_IDLE;
-
-      // Manually set up repeat tracking since we just emitted
-      s_last_key = held_key;
-      s_last_modifiers = held_modifiers;
-      s_last_key_press_time = now;
-      s_repeat_started = false;
-      s_repeat_active = true;
-
-      if (ENABLE_DEBUG_KEYPRESS_LOGGING)
-      {
-        LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
-                     "Single-key held (>= %ums) - emitting for repeat (key=0x%02X, transitioning to IDLE for repeat tracking)",
-                     repeat_delay_ms, held_key);
-      }
+    if (hold_threshold_ms == 0 || collect_duration >= hold_threshold_ticks)
+    {
+      start_repeat_from_held_key(now, collect_duration, repeat_delay_ms);
     }
   }
 
@@ -1259,6 +1452,8 @@ void m4g_bridge_process_key_repeat(void)
   {
     s_repeat_started = false;
     s_repeat_active = false;
+    s_repeat_cancel_pending = false;
+    s_in_repeat_emit = false;
     return;
   }
 
@@ -1272,32 +1467,29 @@ void m4g_bridge_process_key_repeat(void)
     {
       // Start repeating
       s_repeat_started = true;
-      s_last_repeat_time = now;
       s_repeat_active = true;
+      s_repeat_cancel_pending = false;
 
-      // Send first repeat as release/press pair to ensure host sees transition
       emit_repeat_cycle(s_last_key, s_last_modifiers);
 
       if (ENABLE_DEBUG_KEYPRESS_LOGGING)
       {
         LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
-                     "Key repeat started: key=0x%02X (after %ums)", s_last_key, repeat_delay_ms);
+                     "Key repeat started: key=0x%02X (after %" PRIu32 "ms)", s_last_key, repeat_delay_ms);
       }
     }
   }
   else
   {
-    // Already repeating - check if it's time for next repeat
+    // Already repeating - check if it's time for next cycle
     TickType_t since_last_repeat = now - s_last_repeat_time;
     uint32_t repeat_rate_ms = m4g_settings_get_key_repeat_rate_ms();
 
     if (since_last_repeat >= pdMS_TO_TICKS(repeat_rate_ms))
     {
-      s_last_repeat_time = now;
-
-      // Send repeat as release/press pair
       emit_repeat_cycle(s_last_key, s_last_modifiers);
     }
   }
+
 #endif
 }
