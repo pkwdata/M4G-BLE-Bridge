@@ -600,10 +600,10 @@ export default function App() {
 
       for (const image of pkg.images) {
         // Prepend base URL if path doesn't start with http:// or https://
-        const imagePath = image.path.startsWith('http') 
-          ? image.path 
+        const imagePath = image.path.startsWith('http')
+          ? image.path
           : `${import.meta.env.BASE_URL}${image.path}`;
-        
+
         appendLog(`Fetching ${imagePath}…`, "trace");
         const response = await fetch(`${imagePath}?cache-bust=${Date.now()}`);
         if (!response.ok) {
@@ -975,21 +975,21 @@ export default function App() {
                         }
                       }}
                     >
-                        {(manifest?.packages ?? []).map((pkg) => (
-                          <MenuItem key={pkg.id} value={pkg.id}>
-                            <Stack spacing={0.5} sx={{ width: '100%' }}>
-                              <Typography variant="subtitle2" fontWeight={600}>
-                                {pkg.name}
+                      {(manifest?.packages ?? []).map((pkg) => (
+                        <MenuItem key={pkg.id} value={pkg.id}>
+                          <Stack spacing={0.5} sx={{ width: '100%' }}>
+                            <Typography variant="subtitle2" fontWeight={600}>
+                              {pkg.name}
+                            </Typography>
+                            {pkg.description && (
+                              <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'normal' }}>
+                                {pkg.description}
                               </Typography>
-                              {pkg.description && (
-                                <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'normal' }}>
-                                  {pkg.description}
-                                </Typography>
-                              )}
-                            </Stack>
-                          </MenuItem>
-                        ))}
-                      </TextField>
+                            )}
+                          </Stack>
+                        </MenuItem>
+                      ))}
+                    </TextField>
 
                     {selectedPackage && (
                       <Box>
