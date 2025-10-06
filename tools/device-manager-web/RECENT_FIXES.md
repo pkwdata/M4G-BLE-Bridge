@@ -30,14 +30,14 @@ await loader.main();  // ✅ connects once
 
 **Solution**: Added SelectProps with MenuProps styling:
 ```typescript
-SelectProps={{
+SelectProps={%raw%}{{
   MenuProps: {
     PaperProps: {
       sx: {
         '& .MuiMenuItem-root': {
           whiteSpace: 'normal',
           minHeight: 48,
-          alignItems: 'flex-start',
+          alignItems: 'flex-start',{%endraw%}
           py: 1.5
         }
       }
