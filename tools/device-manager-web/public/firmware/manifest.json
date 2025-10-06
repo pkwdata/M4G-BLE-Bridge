@@ -12,7 +12,7 @@
       "eraseAll": false,
       "images": [
         {
-          "path": "/firmware/M4G_BLE_BRIDGE_MERGED.bin",
+          "path": "firmware/M4G_BLE_BRIDGE_MERGED.bin",
           "address": "0x0"
         }
       ]

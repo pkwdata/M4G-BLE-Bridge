@@ -200,7 +200,8 @@ export default function App() {
   useEffect(() => {
     const loadManifest = async () => {
       try {
-        const res = await fetch("/firmware/manifest.json", { cache: "no-store" });
+        const manifestPath = `${import.meta.env.BASE_URL}firmware/manifest.json`;
+        const res = await fetch(manifestPath, { cache: "no-store" });
         if (!res.ok) {
           throw new Error(`Manifest not found (HTTP ${res.status})`);
         }
@@ -216,7 +217,7 @@ export default function App() {
       } catch (err) {
         console.warn("Failed to load firmware manifest", err);
         setManifestError(
-          "Firmware manifest was not found. Prebuilt options will be hidden until you add /firmware/manifest.json."
+          `Firmware manifest was not found. Prebuilt options will be hidden until you add ${import.meta.env.BASE_URL}firmware/manifest.json.`
         );
         setManifest(null);
       }
@@ -600,10 +601,15 @@ export default function App() {
       const files = [] as { data: string; address: number }[];
 
       for (const image of pkg.images) {
-        appendLog(`Fetching ${image.path}…`, "trace");
-        const response = await fetch(`${image.path}?cache-bust=${Date.now()}`);
+        // Prepend base URL if path doesn't start with http:// or https://
+        const imagePath = image.path.startsWith('http') 
+          ? image.path 
+          : `${import.meta.env.BASE_URL}${image.path}`;
+        
+        appendLog(`Fetching ${imagePath}…`, "trace");
+        const response = await fetch(`${imagePath}?cache-bust=${Date.now()}`);
         if (!response.ok) {
-          throw new Error(`Failed to fetch ${image.path} (HTTP ${response.status})`);
+          throw new Error(`Failed to fetch ${imagePath} (HTTP ${response.status})`);
         }
         const buffer = await response.arrayBuffer();
         const bytes = new Uint8Array(buffer);
