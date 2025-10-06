@@ -610,7 +610,7 @@ static void emit_keyboard_state(uint8_t modifiers, const uint8_t keys[6], bool a
     }
     else
     {
-      LOG_AND_SAVE(true, E, BRIDGE_TAG, "Keyboard report failed (conn=%d notify=%d)",
+      LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, E, BRIDGE_TAG, "Keyboard report failed (conn=%d notify=%d)",
                    m4g_ble_is_connected(), m4g_ble_notifications_enabled());
     }
   }
@@ -657,7 +657,7 @@ static void emit_keyboard_state(uint8_t modifiers, const uint8_t keys[6], bool a
         }
         else
         {
-          LOG_AND_SAVE(true, W, BRIDGE_TAG, "Mouse report failed (conn=%d notify=%d)",
+          LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, W, BRIDGE_TAG, "Mouse report failed (conn=%d notify=%d)",
                        m4g_ble_is_connected(), m4g_ble_notifications_enabled());
         }
       }
@@ -1304,7 +1304,7 @@ void m4g_bridge_process_usb_report(uint8_t slot, const uint8_t *report, size_t l
   {
     if (!s_warned_invalid_slot)
     {
-      LOG_AND_SAVE(true, W, BRIDGE_TAG, "Ignoring report for invalid slot %u", slot);
+      LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, W, BRIDGE_TAG, "Ignoring report for invalid slot %u", slot);
       s_warned_invalid_slot = true;
     }
     return;
@@ -1346,7 +1346,7 @@ void m4g_bridge_process_usb_report(uint8_t slot, const uint8_t *report, size_t l
       }
       else
       {
-        LOG_AND_SAVE(true, W, BRIDGE_TAG, "USB mouse report forward failed");
+        LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, W, BRIDGE_TAG, "USB mouse report forward failed");
       }
     }
     return;

@@ -309,7 +309,7 @@ static void chord_log_quality(void) {
         quality = "ACCEPTABLE";
     }
     
-    LOG_AND_SAVE(true, I, BRIDGE_TAG, 
+    LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG, 
         "Chord quality: %s (press_dev=%ums, release_dev=%ums, keys=%u)",
         quality, press_deviation, release_deviation, s_chord_deviation.key_count);
 }
@@ -492,7 +492,7 @@ Test with CharaChorder's timing thresholds:
 
 ```c
 // Log format matching DeviceManager
-LOG_AND_SAVE(true, I, BRIDGE_TAG,
+LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, BRIDGE_TAG,
     "Chord: %u keys, press_dev=%ums, release_dev=%ums, quality=%s",
     key_count, press_deviation, release_deviation, quality_string);
 ```

@@ -99,7 +99,7 @@ static void parse_embedded_report_map(void)
   if (s_hid_report_map_len == 0)
   {
     // Fallback to zero-length safe map
-    LOG_AND_SAVE(true, E, BLE_TAG, "HID report map parse produced 0 bytes");
+    LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, E, BLE_TAG, "HID report map parse produced 0 bytes");
   }
   else
   {
@@ -302,7 +302,7 @@ static void start_advertising(void)
   adv_params.itvl_min = 32; // 20ms (32 * 0.625ms)
   adv_params.itvl_max = 48; // 30ms (48 * 0.625ms)
 
-  LOG_AND_SAVE(true, I, BLE_TAG, "BEFORE ADV START: min=%d max=%d", adv_params.itvl_min, adv_params.itvl_max);
+  LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG, "BEFORE ADV START: min=%d max=%d", adv_params.itvl_min, adv_params.itvl_max);
   adv_params.channel_map = 0;   // Use all channels
   adv_params.filter_policy = 0; // Allow all connections
   struct ble_hs_adv_fields fields;
@@ -324,7 +324,7 @@ static void start_advertising(void)
     LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, E, BLE_TAG, "adv set fields rc=%d", rc);
     return;
   }
-  LOG_AND_SAVE(true, I, BLE_TAG, "CALLING ble_gap_adv_start with min=%d max=%d", adv_params.itvl_min, adv_params.itvl_max);
+  LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG, "CALLING ble_gap_adv_start with min=%d max=%d", adv_params.itvl_min, adv_params.itvl_max);
   rc = ble_gap_adv_start(s_addr_type, NULL, BLE_HS_FOREVER, &adv_params, gap_event_handler, NULL);
   if (rc != 0)
   {
@@ -360,7 +360,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg)
     }
     return 0;
   case BLE_GAP_EVENT_DISCONNECT:
-    LOG_AND_SAVE(true, I, BLE_TAG, "Disconnected: reason=%d", event->disconnect.reason);
+    LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG, "Disconnected: reason=%d", event->disconnect.reason);
     s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     s_report_notifications_enabled = false;
     s_boot_notifications_enabled = false;
@@ -456,7 +456,7 @@ esp_err_t m4g_ble_init(void)
   esp_err_t rc = nimble_port_init();
   if (rc != ESP_OK)
   {
-    LOG_AND_SAVE(true, E, BLE_TAG, "nimble_port_init failed: %s", esp_err_to_name(rc));
+    LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, E, BLE_TAG, "nimble_port_init failed: %s", esp_err_to_name(rc));
     return rc;
   }
   // Security & host config mirroring legacy approach
@@ -480,7 +480,7 @@ esp_err_t m4g_ble_init(void)
   parse_embedded_report_map();
   if (s_hid_report_map_len == 0)
   {
-    LOG_AND_SAVE(true, W, BLE_TAG, "HID report map empty after parse");
+    LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, W, BLE_TAG, "HID report map empty after parse");
   }
   // Count and add our HID services
   irc = ble_gatts_count_cfg(hid_svcs);
@@ -501,12 +501,12 @@ esp_err_t m4g_ble_init(void)
   // This can be enabled manually when needed rather than every boot
 #ifdef CONFIG_M4G_CLEAR_BONDING_ON_BOOT
   int clear_rc = ble_store_clear();
-  LOG_AND_SAVE(true, W, BLE_TAG, "Cleared bonding store: rc=%d (CONFIG_M4G_CLEAR_BONDING_ON_BOOT enabled)", clear_rc);
+  LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, W, BLE_TAG, "Cleared bonding store: rc=%d (CONFIG_M4G_CLEAR_BONDING_ON_BOOT enabled)", clear_rc);
 #else
-  LOG_AND_SAVE(true, I, BLE_TAG, "BLE bonding initialized - existing bonds preserved");
+  LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG, "BLE bonding initialized - existing bonds preserved");
 #endif
 #else
-  LOG_AND_SAVE(true, W, BLE_TAG, "CONFIG_BT_NIMBLE_NVS_PERSIST is disabled; BLE bonds will not survive reflashing");
+  LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, W, BLE_TAG, "CONFIG_BT_NIMBLE_NVS_PERSIST is disabled; BLE bonds will not survive reflashing");
 #endif
 
   nimble_port_freertos_init(host_task);

@@ -76,7 +76,7 @@ void m4g_diag_start_periodic_task(void)
 
 esp_err_t m4g_diag_run_startup_checks(void)
 {
-  LOG_AND_SAVE(true, I, DIAG_TAG, "Running startup diagnostics...");
+  LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, DIAG_TAG, "Running startup diagnostics...");
 
   // 1. NVS accessibility
   nvs_handle_t nvs;
@@ -84,32 +84,32 @@ esp_err_t m4g_diag_run_startup_checks(void)
   if (err == ESP_OK)
   {
     nvs_close(nvs);
-    LOG_AND_SAVE(true, I, DIAG_TAG, "NVS open OK (log namespace)");
+    LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, DIAG_TAG, "NVS open OK (log namespace)");
   }
   else
   {
-    LOG_AND_SAVE(true, E, DIAG_TAG, "NVS open failed: %d", err);
+    LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, E, DIAG_TAG, "NVS open failed: %d", err);
   }
 
   // 2. BLE notification dry run (expected to fail if not connected yet)
   uint8_t empty_report[8] = {0};
   bool sent = m4g_ble_send_keyboard_report(empty_report);
-  LOG_AND_SAVE(true, I, DIAG_TAG, "BLE test send (no connection yet is fine): %s", sent ? "delivered" : "not sent");
+  LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, DIAG_TAG, "BLE test send (no connection yet is fine): %s", sent ? "delivered" : "not sent");
 
   // 3. Bridge initial state
   uint8_t tmp[8];
   bool have = m4g_bridge_get_last_keyboard(tmp);
-  LOG_AND_SAVE(true, I, DIAG_TAG, "Bridge last keyboard cached: %s", have ? "yes" : "no (expected)");
+  LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, DIAG_TAG, "Bridge last keyboard cached: %s", have ? "yes" : "no (expected)");
 
   // 4. USB initial device count
-  LOG_AND_SAVE(true, I, DIAG_TAG, "Initial USB HID count: %d", (int)m4g_usb_active_hid_count());
+  LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, DIAG_TAG, "Initial USB HID count: %d", (int)m4g_usb_active_hid_count());
 
   // 5. LED baseline
-  LOG_AND_SAVE(true, I, DIAG_TAG, "LED baseline USB=%d BLE=%d", m4g_led_is_usb_connected(), m4g_led_is_ble_connected());
+  LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, DIAG_TAG, "LED baseline USB=%d BLE=%d", m4g_led_is_usb_connected(), m4g_led_is_ble_connected());
 
   dump_basic_environment();
   m4g_diag_start_periodic_task();
 
-  LOG_AND_SAVE(true, I, DIAG_TAG, "Diagnostics complete");
+  LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, DIAG_TAG, "Diagnostics complete");
   return ESP_OK;
 }

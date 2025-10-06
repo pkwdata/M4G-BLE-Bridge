@@ -1,0 +1,83 @@
+name: Build and Release Firmware
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.0.0
+  workflow_dispatch:  # Allows manual trigger
+
+jobs:
+  build-firmware:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Setup ESP-IDF
+      uses: espressif/esp-idf-ci-action@v1
+      with:
+        esp_idf_version: v6.0
+        target: esp32s3
+    
+    - name: Build firmware
+      working-directory: .
+      run: |
+        . $IDF_PATH/export.sh
+        idf.py set-target esp32s3
+        idf.py build
+    
+    - name: Verify merged binary exists
+      run: |
+        ls -lh build/M4G_BLE_BRIDGE_MERGED.bin
+        echo "Merged binary size: $(du -h build/M4G_BLE_BRIDGE_MERGED.bin | cut -f1)"
+    
+    - name: Upload firmware artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: firmware-esp32s3
+        path: |
+          build/M4G_BLE_BRIDGE_MERGED.bin
+          build/M4G_BLE_BRIDGE.bin
+          build/bootloader/bootloader.bin
+          build/partition_table/partition-table.bin
+          build/flash_args
+    
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          build/M4G_BLE_BRIDGE_MERGED.bin
+          build/M4G_BLE_BRIDGE.bin
+          build/bootloader/bootloader.bin
+          build/partition_table/partition-table.bin
+        body: |
+          ## M4G BLE Bridge Firmware Release
+          
+          ### Quick Flash (Recommended)
+          Download `M4G_BLE_BRIDGE_MERGED.bin` and flash at address 0x0:
+          ```bash
+          esptool.py --chip esp32s3 write_flash 0x0 M4G_BLE_BRIDGE_MERGED.bin
+          ```
+          
+          Or use the [Web-based Device Manager](https://pkwdata.github.io/M4G-BLE-Bridge/)
+          
+          ### Build Information
+          - **Target**: ESP32-S3
+          - **IDF Version**: 6.0
+          - **Flash Mode**: DIO
+          - **Flash Frequency**: 80MHz
+          - **Flash Size**: 4MB
+          
+          ### Files Included
+          - `M4G_BLE_BRIDGE_MERGED.bin` - Single merged binary (bootloader + partition table + app)
+          - `M4G_BLE_BRIDGE.bin` - Application only (flash at 0x10000)
+          - `bootloader.bin` - Bootloader (flash at 0x0)
+          - `partition-table.bin` - Partition table (flash at 0x8000)
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -112,7 +112,7 @@ esp_err_t m4g_led_init(void)
   esp_err_t err = simple_neopixel_init(&rgb_led, CONFIG_M4G_LED_DATA_GPIO);
   if (err != ESP_OK)
   {
-    LOG_AND_SAVE(true, E, LED_TAG, "Failed to init NeoPixel: %s", esp_err_to_name(err));
+    LOG_AND_SAVE(ENABLE_DEBUG_LED_LOGGING, E, LED_TAG, "Failed to init NeoPixel: %s", esp_err_to_name(err));
     return err;
   }
 

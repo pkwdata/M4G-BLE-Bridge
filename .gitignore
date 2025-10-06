@@ -14,7 +14,7 @@
 .vscode/*.db-wal
 
 # Build outputs
-build/
+build/*
 debug/
 release/
 managed_components/
@@ -22,7 +22,7 @@ managed_components/
 # Compiled files
 *.o
 *.elf
-*.bin
+#*.bin
 *.map
 *.hex
 
@@ -61,3 +61,6 @@ debug
 
 .defaults
 .old
+
+ # Allow
+!build/M4G_BLE_BRIDGE_MERGED.bin

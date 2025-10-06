@@ -315,7 +315,7 @@ static void usb_host_client_event_cb(const usb_host_client_event_msg_t *event_ms
 
         if (elapsed_ms > 5000)
         {
-          LOG_AND_SAVE(true, W, USB_TAG,
+          LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, W, USB_TAG,
                        "WARNING: Only one CharaChorder half detected after %lu ms. Expected both halves. "
                        "This may cause typing issues on the right-hand side.",
                        elapsed_ms);
@@ -361,7 +361,7 @@ static void enumerate_device(uint8_t dev_addr)
   if (s_charachorder_mode && s_charachorder_halves_connected > 0 && is_chara_dev)
   {
     ++s_charachorder_halves_detected;
-    LOG_AND_SAVE(true, I, USB_TAG,
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG,
                  "Second CharaChorder half detected at addr %d (both halves now present - total detected: %d)",
                  dev_addr, s_charachorder_halves_detected);
     usb_host_device_close(s_client, dev_hdl);
@@ -369,7 +369,7 @@ static void enumerate_device(uint8_t dev_addr)
     // Verify both halves are present
     if (s_charachorder_halves_detected >= 2)
     {
-      LOG_AND_SAVE(true, I, USB_TAG, "Both CharaChorder halves successfully connected");
+      LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "Both CharaChorder halves successfully connected");
     }
     return;
   }
@@ -422,7 +422,7 @@ static void enumerate_device(uint8_t dev_addr)
     if (!intf_desc)
       continue;
 
-    LOG_AND_SAVE(true, I, USB_TAG,
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG,
                  "Interface %d: Class=0x%02X, Number=%d, HID claims so far=%d, max allowed=%d",
                  i, intf_desc->bInterfaceClass, intf_desc->bInterfaceNumber,
                  hid_claims_on_device, max_interfaces_for_this_device);
@@ -432,14 +432,14 @@ static void enumerate_device(uint8_t dev_addr)
       // Check if we've reached the interface limit for this device
       if (hid_claims_on_device >= max_interfaces_for_this_device)
       {
-        LOG_AND_SAVE(true, W, USB_TAG, "Skipping interface %d - reached max claims (%d)",
+        LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, W, USB_TAG, "Skipping interface %d - reached max claims (%d)",
                      intf_desc->bInterfaceNumber, max_interfaces_for_this_device);
         continue;
       }
 
       if (usb_host_interface_claim(s_client, dev_hdl, intf_desc->bInterfaceNumber, 0) == ESP_OK)
       {
-        LOG_AND_SAVE(true, I, USB_TAG,
+        LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG,
                      "Claimed HID interface %d - scanning %d endpoints",
                      intf_desc->bInterfaceNumber, intf_desc->bNumEndpoints);
 
@@ -450,7 +450,7 @@ static void enumerate_device(uint8_t dev_addr)
           ep_desc = usb_parse_endpoint_descriptor_by_index(intf_desc, ep, cfg->wTotalLength, &ep_offset);
           if (ep_desc)
           {
-            LOG_AND_SAVE(true, I, USB_TAG,
+            LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG,
                          "  Endpoint %d: addr=0x%02X, attr=0x%02X, type=%s, dir=%s",
                          ep, ep_desc->bEndpointAddress, ep_desc->bmAttributes,
                          (ep_desc->bmAttributes & USB_BM_ATTRIBUTES_XFERTYPE_MASK) == USB_BM_ATTRIBUTES_XFER_INT ? "INT" : "OTHER",
@@ -498,7 +498,7 @@ static void enumerate_device(uint8_t dev_addr)
           if (s_charachorder_halves_connected == 1)
           {
             s_first_half_connected_time = xTaskGetTickCount();
-            LOG_AND_SAVE(true, I, USB_TAG, "First CharaChorder half connected, waiting for second half...");
+            LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "First CharaChorder half connected, waiting for second half...");
           }
 
           snprintf(dev->device_name, sizeof(dev->device_name), "CharaChorder_%u", (unsigned)s_charachorder_halves_connected);
@@ -586,7 +586,7 @@ static void hid_transfer_callback(usb_transfer_t *transfer)
   else
   {
     const char *status_name = transfer_status_to_str(transfer->status);
-    LOG_AND_SAVE(true, W, USB_TAG, "Transfer issue dev=%s slot=%d status=%s(%d)", dev->device_name, dev->slot, status_name, transfer->status);
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, W, USB_TAG, "Transfer issue dev=%s slot=%d status=%s(%d)", dev->device_name, dev->slot, status_name, transfer->status);
 
     TickType_t now = xTaskGetTickCount();
     if (now - dev->last_error_tick > pdMS_TO_TICKS(250))
@@ -668,7 +668,7 @@ static void hid_transfer_callback(usb_transfer_t *transfer)
       if (retry == max_retries - 1)
       {
         // Final retry failed
-        LOG_AND_SAVE(true, W, USB_TAG,
+        LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, W, USB_TAG,
                      "Transfer resubmit failed after %d retries - device may be resetting",
                      max_retries);
       }
@@ -677,7 +677,7 @@ static void hid_transfer_callback(usb_transfer_t *transfer)
     else
     {
       // Other error - give up immediately
-      LOG_AND_SAVE(true, E, USB_TAG,
+      LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, E, USB_TAG,
                    "Transfer resubmit failed with error %s (retry %d/%d)",
                    esp_err_to_name(err), retry, max_retries);
       break;
@@ -705,7 +705,7 @@ static void hid_transfer_callback(usb_transfer_t *transfer)
   {
     if (is_malformed)
     {
-      LOG_AND_SAVE(true, W, USB_TAG,
+      LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, W, USB_TAG,
                    "Ignoring malformed CharaChorder chord report (%zu bytes with ErrorRollOver)",
                    report_len);
       ESP_LOG_BUFFER_HEX_LEVEL(USB_TAG, report_buffer, report_len, ESP_LOG_WARN);
@@ -815,7 +815,7 @@ esp_err_t m4g_usb_init(const m4g_usb_config_t *cfg, m4g_usb_hid_report_cb_t cb)
   esp_err_t err = usb_host_install(&host_cfg);
   if (err != ESP_OK)
   {
-    LOG_AND_SAVE(true, E, USB_TAG, "usb_host_install failed: %s", esp_err_to_name(err));
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, E, USB_TAG, "usb_host_install failed: %s", esp_err_to_name(err));
     return err;
   }
   LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "USB Host library installed (skeleton)");
@@ -828,7 +828,7 @@ esp_err_t m4g_usb_init(const m4g_usb_config_t *cfg, m4g_usb_hid_report_cb_t cb)
   err = usb_host_client_register(&client_cfg, &s_client);
   if (err != ESP_OK)
   {
-    LOG_AND_SAVE(true, E, USB_TAG, "usb_host_client_register failed: %s", esp_err_to_name(err));
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, E, USB_TAG, "usb_host_client_register failed: %s", esp_err_to_name(err));
     return err;
   }
   LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "USB client registered (skeleton)");
