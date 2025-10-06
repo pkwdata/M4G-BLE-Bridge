@@ -2,6 +2,8 @@
 
 Browser-based firmware flashing interface for the M4G BLE Bridge. Built with Vite, React, Material UI, and [esptool-js](https://github.com/espressif/esptool-js) and designed to mimic the CharaChorder Device Manager workflow.
 
+🌐 **Live Version**: https://pkwdata.github.io/M4G-BLE-Bridge/
+
 ## Features
 
 - **WebSerial flashing** for ESP32-S3 boards using the browser (Chrome / Edge desktop)
