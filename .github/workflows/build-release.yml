@@ -1,16 +1,17 @@
-name: Build and Release Firmware
+name: Build and Release Firmware (DISABLED - WIP)
 
+# Temporarily disabled while debugging build issues
 on:
-  push:
-    tags:
-      - 'v*.*.*'  # Triggers on version tags like v1.0.0
-  workflow_dispatch:  # Allows manual trigger
+  # push:
+  #   tags:
+  #     - 'v*.*.*'
+  workflow_dispatch:  # Only allow manual trigger for testing
 
 jobs:
   build-firmware:
     runs-on: ubuntu-latest
     container:
-      image: espressif/idf:latest
+      image: espressif/idf:v5.3.1
     
     steps:
     - name: Checkout repository
@@ -23,7 +24,6 @@ jobs:
       run: |
         . $IDF_PATH/export.sh
         idf.py --version
-        idf.py fullclean
         idf.py set-target esp32s3
         idf.py build
     

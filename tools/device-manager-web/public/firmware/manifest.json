@@ -3,8 +3,8 @@
   "packages": [
     {
       "id": "m4g-ble-bridge-local",
-      "name": "M4G BLE Bridge (Local Build)",
-      "description": "Local firmware build - use this if you built firmware locally.",
+      "name": "M4G BLE Bridge",
+      "description": "Flash M4G BLE Bridge firmware to your ESP32-S3.",
       "chipFamily": "ESP32S3",
       "flashSize": "4MB",
       "flashMode": "dio",
@@ -13,22 +13,6 @@
       "images": [
         {
           "path": "/firmware/M4G_BLE_BRIDGE_MERGED.bin",
-          "address": "0x0"
-        }
-      ]
-    },
-    {
-      "id": "m4g-ble-bridge-latest-release",
-      "name": "M4G BLE Bridge (Latest Release)",
-      "description": "Latest stable firmware from GitHub releases - flash at 0x0.",
-      "chipFamily": "ESP32S3",
-      "flashSize": "4MB",
-      "flashMode": "dio",
-      "flashFreq": "80m",
-      "eraseAll": false,
-      "images": [
-        {
-          "path": "https://github.com/pkwdata/M4G-BLE-Bridge/releases/latest/download/M4G_BLE_BRIDGE_MERGED.bin",
           "address": "0x0"
         }
       ]
