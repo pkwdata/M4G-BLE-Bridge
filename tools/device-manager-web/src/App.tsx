@@ -9,7 +9,6 @@ import {
   Chip,
   Container,
   Divider,
-  FormControl,
   Grid,
   IconButton,
   LinearProgress,
@@ -953,29 +952,29 @@ export default function App() {
 
                 {activeTab === "builtin" && (
                   <Stack spacing={2}>
-                    <FormControl fullWidth>
-                      <TextField
-                        select
-                        label="Firmware"
-                        value={selectedPackageId ?? ""}
-                        onChange={(event: ChangeEvent<HTMLInputElement>) => setSelectedPackageId(event.target.value)}
-                        disabled={!manifest?.packages || manifest.packages.length === 0}
-                        SelectProps={{
-                          MenuProps: {
-                            PaperProps: {
-                              sx: {
-                                maxHeight: 400,
-                                '& .MuiMenuItem-root': {
-                                  whiteSpace: 'normal',
-                                  minHeight: 48,
-                                  alignItems: 'flex-start',
-                                  py: 1.5
-                                }
+                    <TextField
+                      select
+                      fullWidth
+                      label="Firmware"
+                      value={selectedPackageId ?? ""}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) => setSelectedPackageId(event.target.value)}
+                      disabled={!manifest?.packages || manifest.packages.length === 0}
+                      SelectProps={{
+                        MenuProps: {
+                          PaperProps: {
+                            sx: {
+                              maxHeight: 400,
+                              '& .MuiMenuItem-root': {
+                                whiteSpace: 'normal',
+                                minHeight: 48,
+                                alignItems: 'flex-start',
+                                py: 1.5
                               }
                             }
                           }
-                        }}
-                      >
+                        }
+                      }}
+                    >
                         {(manifest?.packages ?? []).map((pkg) => (
                           <MenuItem key={pkg.id} value={pkg.id}>
                             <Stack spacing={0.5} sx={{ width: '100%' }}>
@@ -991,7 +990,6 @@ export default function App() {
                           </MenuItem>
                         ))}
                       </TextField>
-                    </FormControl>
 
                     {selectedPackage && (
                       <Box>
