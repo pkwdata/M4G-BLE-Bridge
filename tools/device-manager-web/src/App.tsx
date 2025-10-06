@@ -12,7 +12,6 @@ import {
   FormControl,
   Grid,
   IconButton,
-  InputLabel,
   LinearProgress,
   Link,
   List,
@@ -955,7 +954,6 @@ export default function App() {
                 {activeTab === "builtin" && (
                   <Stack spacing={2}>
                     <FormControl fullWidth>
-                      <InputLabel id="firmware-select-label">Firmware</InputLabel>
                       <TextField
                         select
                         label="Firmware"
