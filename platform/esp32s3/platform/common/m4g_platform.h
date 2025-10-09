@@ -7,15 +7,17 @@
 #include "m4g_ble.h"
 #include "m4g_led.h"
 #include "m4g_logging.h"
-#include "m4g_bridge.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 
 static const char *PLAT_TAG = "M4G-PLAT";
 
-static void platform_usb_report_cb(uint8_t slot, const uint8_t *report, size_t len, bool is_charachorder)
+static void platform_usb_report_cb(const uint8_t *data, size_t len)
 {
-    m4g_bridge_process_usb_report(slot, report, len, is_charachorder);
+    // This callback is not actually used by the USB component
+    // The USB component calls m4g_bridge_process_usb_report directly
+    (void)data;
+    (void)len;
 }
 
 esp_err_t m4g_platform_init(void)

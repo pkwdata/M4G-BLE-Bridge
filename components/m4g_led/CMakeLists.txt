@@ -1,1 +1,1 @@
-idf_component_register(SRCS "m4g_led.c" "simple_neopixel.c" INCLUDE_DIRS "include" REQUIRES driver m4g_logging)
+idf_component_register(SRCS "m4g_led.c" "simple_neopixel.c" INCLUDE_DIRS "include" REQUIRES driver m4g_logging nvs_flash)

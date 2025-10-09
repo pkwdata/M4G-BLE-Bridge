@@ -2647,6 +2647,21 @@ CONFIG_M4G_DUPLICATE_SUPPRESSION_DEFAULT=y
 # end of M4G Settings Configuration
 
 #
+# Split Keyboard Configuration
+#
+
+#
+# Configure for split keyboard setup with 2.4GHz wireless connection
+#
+CONFIG_M4G_SPLIT_ROLE_LEFT=y
+# CONFIG_M4G_SPLIT_ROLE_RIGHT is not set
+# CONFIG_M4G_SPLIT_ROLE_STANDALONE is not set
+CONFIG_M4G_ESPNOW_CHANNEL=1
+CONFIG_M4G_ESPNOW_USE_ENCRYPTION=y
+CONFIG_M4G_ESPNOW_PMK="M4G_SPLIT_KEY!!"
+# end of Split Keyboard Configuration
+
+#
 # Platform Configuration
 #
 

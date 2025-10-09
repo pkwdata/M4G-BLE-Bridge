@@ -15,6 +15,7 @@
 
 # Build outputs
 build/*
+build-*/*
 debug/
 release/
 managed_components/

@@ -7,6 +7,70 @@ menu "M4G Bridge Options"
 # Include settings component Kconfig first for easy access
 rsource "components/m4g_settings/Kconfig"
 
+menu "Split Keyboard Configuration"
+	comment "Configure for split keyboard setup with 2.4GHz wireless connection"
+
+	choice M4G_SPLIT_ROLE
+		prompt "Device Role"
+		default M4G_SPLIT_ROLE_LEFT
+		help
+			Select the role of this device in a split keyboard configuration.
+			LEFT: Connects to left keyboard via USB, receives data from right side via ESP-NOW, and transmits to computer via BLE
+			RIGHT: Connects to right keyboard via USB and transmits data to left side via ESP-NOW
+			STANDALONE: Single keyboard setup (original behavior, no ESP-NOW)
+
+	config M4G_SPLIT_ROLE_LEFT
+		bool "Left Side (USB + ESP-NOW RX + BLE)"
+		help
+			Build firmware for the left-side board.
+			- Connects to left keyboard half via USB
+			- Receives right keyboard data via ESP-NOW (2.4GHz)
+			- Combines both sides and transmits to computer via Bluetooth
+
+	config M4G_SPLIT_ROLE_RIGHT
+		bool "Right Side (USB + ESP-NOW TX)"
+		help
+			Build firmware for the right-side board.
+			- Connects to right keyboard half via USB
+			- Transmits keyboard data to left side via ESP-NOW (2.4GHz)
+			- No Bluetooth functionality (acts as wireless USB bridge)
+
+	config M4G_SPLIT_ROLE_STANDALONE
+		bool "Standalone (Original Single Keyboard)"
+		help
+			Build firmware for single keyboard setup (original behavior).
+			- Connects to one keyboard via USB
+			- Transmits to computer via Bluetooth
+			- No ESP-NOW functionality
+	endchoice
+
+	config M4G_ESPNOW_CHANNEL
+		int "ESP-NOW WiFi Channel"
+		range 1 13
+		default 1
+		depends on !M4G_SPLIT_ROLE_STANDALONE
+		help
+			WiFi channel for ESP-NOW communication between left and right boards.
+			Both boards must use the same channel.
+
+	config M4G_ESPNOW_USE_ENCRYPTION
+		bool "Enable ESP-NOW Encryption"
+		default y
+		depends on !M4G_SPLIT_ROLE_STANDALONE
+		help
+			Enable encrypted ESP-NOW communication between boards.
+			Both boards must use the same PMK (Primary Master Key).
+
+	config M4G_ESPNOW_PMK
+		string "ESP-NOW Primary Master Key (16 chars)"
+		default "M4G_SPLIT_KEY!!"
+		depends on M4G_ESPNOW_USE_ENCRYPTION
+		help
+			16-character Primary Master Key for encrypted ESP-NOW communication.
+			Change this to a unique value for security.
+			Both left and right boards must use the same key.
+endmenu
+
 menu "Platform Configuration"
 	comment "Platform selection determines USB host controller and BLE stack"
 

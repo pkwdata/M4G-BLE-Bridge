@@ -1,8 +1,20 @@
 #include "m4g_usb.h"
 #include "m4g_logging.h"
 #include "m4g_led.h"
+#ifndef CONFIG_M4G_SPLIT_ROLE_RIGHT
 #include "m4g_ble.h"    // Direct BLE forwarding (legacy path - now via bridge)
 #include "m4g_bridge.h" // Bridge for translation
+#else
+// RIGHT side stubs - these functions/constants are not available without bridge/ble
+#define M4G_BRIDGE_MAX_SLOTS 2
+#define M4G_INVALID_SLOT 0xFF
+static inline void m4g_bridge_set_charachorder_status(bool detected, bool both_halves) { (void)detected; (void)both_halves; }
+static inline void m4g_bridge_reset_slot(uint8_t slot) { (void)slot; }
+static inline void m4g_bridge_process_usb_report(uint8_t slot, const uint8_t *report, size_t len, bool is_charachorder) {
+    (void)slot; (void)report; (void)len; (void)is_charachorder;
+    // On RIGHT side, reports should be forwarded via ESP-NOW instead
+}
+#endif
 #include "usb/usb_host.h"
 #include "usb/usb_types_stack.h"
 #include "usb/usb_types_ch9.h"

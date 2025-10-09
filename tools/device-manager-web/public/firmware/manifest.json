@@ -2,9 +2,9 @@
   "defaultBaud": 921600,
   "packages": [
     {
-      "id": "m4g-ble-bridge-local",
-      "name": "M4G BLE Bridge",
-      "description": "Flash M4G BLE Bridge firmware to your ESP32-S3.",
+      "id": "m4g-ble-bridge-standalone",
+      "name": "M4G BLE Bridge (Standalone)",
+      "description": "Single keyboard mode - USB to Bluetooth bridge for one keyboard. This is the original firmware for single keyboard setups.",
       "chipFamily": "ESP32S3",
       "flashSize": "4MB",
       "flashMode": "dio",
@@ -12,7 +12,39 @@
       "eraseAll": false,
       "images": [
         {
-          "path": "firmware/M4G_BLE_BRIDGE_MERGED.bin",
+          "path": "firmware/M4G_BLE_BRIDGE_STANDALONE_MERGED.bin",
+          "address": "0x0"
+        }
+      ]
+    },
+    {
+      "id": "m4g-ble-bridge-split-left",
+      "name": "M4G BLE Bridge (Split - LEFT Side)",
+      "description": "Split keyboard LEFT board - Connects to left keyboard via USB, receives from right board via 2.4GHz ESP-NOW, and transmits combined output to computer via Bluetooth. Flash this to the board that will be paired with your computer.",
+      "chipFamily": "ESP32S3",
+      "flashSize": "4MB",
+      "flashMode": "dio",
+      "flashFreq": "80m",
+      "eraseAll": false,
+      "images": [
+        {
+          "path": "firmware/M4G_BLE_BRIDGE_LEFT_MERGED.bin",
+          "address": "0x0"
+        }
+      ]
+    },
+    {
+      "id": "m4g-ble-bridge-split-right",
+      "name": "M4G BLE Bridge (Split - RIGHT Side)",
+      "description": "Split keyboard RIGHT board - Connects to right keyboard via USB and transmits wirelessly to left board via 2.4GHz ESP-NOW. No Bluetooth. Flash this to the board that will connect to your right keyboard half.",
+      "chipFamily": "ESP32S3",
+      "flashSize": "4MB",
+      "flashMode": "dio",
+      "flashFreq": "80m",
+      "eraseAll": false,
+      "images": [
+        {
+          "path": "firmware/M4G_BLE_BRIDGE_RIGHT_MERGED.bin",
           "address": "0x0"
         }
       ]

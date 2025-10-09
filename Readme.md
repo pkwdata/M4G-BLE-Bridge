@@ -13,6 +13,7 @@ Then with the help of Claude code I was able to modify this project to provide s
 - **Real-time Processing**: Low-latency keystroke forwarding with 15-byte to 8-byte HID report conversion
 - **Auto-reconnection**: Automatic USB device detection and BLE advertising restart
 - **CharaChorder Optimized**: Specifically tuned for CharaChorder's dual ESP32-S3 internal architecture
+- **Split Keyboard Support**: NEW! 2.4GHz wireless (ESP-NOW) communication between left and right boards
 - **Modular Components**: Clean separation of logging, LED status, USB host, BLE HID, and translation (bridge) logic
 - **Persistent Boot Logs**: Captures early boot / crash logs into NVS and dumps them on next startup
 
@@ -31,6 +32,17 @@ Then with the help of Claude code I was able to modify this project to provide s
 - **CharaChorder MasterForge** (primary target)
 - Any USB HID keyboard with standard 8-byte reports
 - USB hub-based keyboards (dual-half keyboards)
+- **Split keyboards** with separate left/right USB connections (requires 2 ESP32-S3 boards)
+
+### Split Keyboard Mode (NEW!)
+
+For split keyboard configurations (e.g., separate left and right halves):
+
+- **2x ESP32-S3 boards** (one for each half)
+- **Wireless 2.4GHz link** between boards via ESP-NOW
+- Left board connects to computer via Bluetooth
+- Right board wirelessly transmits to left board
+- See [SPLIT_KEYBOARD_SETUP.md](SPLIT_KEYBOARD_SETUP.md) for detailed instructions
 
 ## Software Requirements
 
@@ -61,7 +73,7 @@ idf.py --version
 
 ## Build and Flash Instructions
 
-### 1. Clone and Configure
+### Standard Build (Single Keyboard)
 
 ```bash
 # Clone this repository
@@ -70,27 +82,33 @@ cd M4G-BLE-BRIDGE
 
 # Configure project for your ESP32-S3
 idf.py set-target esp32s3
-```text
 
-### 2. Build
-
-```bash
+# Build
 idf.py build
-```text
 
-### 3. Flash
-
-```bash
-# Replace /dev/ttyACM0 with your ESP32-S3 port
+# Flash (replace /dev/ttyACM0 with your ESP32-S3 port)
 idf.py -p /dev/ttyACM0 flash
-```text
 
-### 4. Monitor
-
-```bash
+# Monitor
 idf.py -p /dev/ttyACM0 monitor
 # Press Ctrl+] to exit monitor
 ```
+
+### Split Keyboard Build (Two Boards)
+
+For split keyboard setups with wireless communication between boards:
+
+**Build Left Side:**
+```bash
+./build-left.sh flash
+```
+
+**Build Right Side:**
+```bash
+./build-right.sh flash
+```
+
+See [SPLIT_KEYBOARD_SETUP.md](SPLIT_KEYBOARD_SETUP.md) for complete split keyboard setup guide.
 
 ## Connection Setup
 

@@ -1,0 +1,17 @@
+# Split Keyboard Configuration - LEFT SIDE
+# This board receives from both local USB (left keyboard) and ESP-NOW (right keyboard)
+# and transmits combined output via Bluetooth
+
+# Split keyboard role (explicit choice selection)
+CONFIG_M4G_SPLIT_ROLE_LEFT=y
+# CONFIG_M4G_SPLIT_ROLE_RIGHT is not set
+# CONFIG_M4G_SPLIT_ROLE_STANDALONE is not set
+
+# Bluetooth MUST be enabled for LEFT side (transmits to computer)
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+
+# ESP-NOW settings
+CONFIG_M4G_ESPNOW_CHANNEL=1
+CONFIG_M4G_ESPNOW_USE_ENCRYPTION=y
+CONFIG_M4G_ESPNOW_PMK="M4G_SPLIT_KEY!!"

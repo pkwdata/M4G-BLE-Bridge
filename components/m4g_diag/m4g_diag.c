@@ -1,8 +1,16 @@
 #include "m4g_diag.h"
 #include "m4g_logging.h"
+#ifndef CONFIG_M4G_SPLIT_ROLE_RIGHT
 #include "m4g_ble.h"
-#include "m4g_usb.h"
 #include "m4g_bridge.h"
+#else
+// RIGHT side stubs - these functions are not available without bridge/ble
+static inline bool m4g_ble_is_connected(void) { return false; }
+static inline bool m4g_ble_notifications_enabled(void) { return false; }
+static inline bool m4g_ble_send_keyboard_report(const uint8_t *report) { (void)report; return false; }
+static inline bool m4g_bridge_get_last_keyboard(uint8_t *out) { (void)out; return false; }
+#endif
+#include "m4g_usb.h"
 #include "m4g_led.h"
 #include <string.h>
 #include "freertos/FreeRTOS.h"
