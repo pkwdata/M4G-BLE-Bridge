@@ -295,13 +295,18 @@ esp_err_t m4g_espnow_init(const m4g_espnow_config_t *config)
   peer.channel = config->channel;
   peer.ifidx = WIFI_IF_STA;
 
-  if (config->peer_mac[0] == 0 && config->peer_mac[1] == 0)
+  // Check if peer MAC is broadcast (FF:FF:FF:FF:FF:FF)
+  bool is_broadcast = (config->peer_mac[0] == 0xFF && config->peer_mac[1] == 0xFF &&
+                       config->peer_mac[2] == 0xFF && config->peer_mac[3] == 0xFF &&
+                       config->peer_mac[4] == 0xFF && config->peer_mac[5] == 0xFF);
+
+  if (is_broadcast)
   {
     // Use broadcast - ESP-NOW does NOT support encryption on broadcast addresses
     memset(peer.peer_addr, 0xFF, 6);
     memcpy(s_peer_mac, peer.peer_addr, 6);
     peer.encrypt = false;  // Force disable encryption for broadcast
-    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, TAG, "Using broadcast peer (encryption disabled for broadcast)");
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, TAG, "Using broadcast peer (encryption disabled)");
   }
   else
   {
@@ -309,7 +314,8 @@ esp_err_t m4g_espnow_init(const m4g_espnow_config_t *config)
     memcpy(peer.peer_addr, config->peer_mac, 6);
     memcpy(s_peer_mac, config->peer_mac, 6);
     peer.encrypt = config->use_pmk;
-    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, TAG, "Using specific peer MAC (encrypt=%d)", peer.encrypt);
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, TAG, "Using specific peer MAC=" MACSTR " (encrypt=%d)",
+                 MAC2STR(peer.peer_addr), peer.encrypt);
   }
 
   ret = esp_now_add_peer(&peer);

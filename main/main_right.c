@@ -17,14 +17,23 @@
 
 static const char *TAG = "M4G-RIGHT";
 
-// USB report callback (unused - USB component handles forwarding internally)
+// USB report callback - forward HID reports to LEFT side via ESP-NOW
 static void usb_report_callback(const uint8_t *data, size_t len)
 {
-    // This callback is not actually used by the USB component
-    // The USB component calls m4g_bridge_process_usb_report directly
-    // For right side, we need a different approach (see main_right.c TODO)
-    (void)data;
-    (void)len;
+    if (!data || len == 0 || len > 64)
+    {
+        return;
+    }
+
+    // Check report type and forward to LEFT via ESP-NOW
+    uint8_t report_id = data[0];
+    bool is_charachorder = (len >= 2 && data[1] != 0); // Heuristic: CharaChorder reports have data
+    
+    esp_err_t ret = m4g_espnow_send_hid_report(0, data, len, is_charachorder);
+    if (ret != ESP_OK && ENABLE_DEBUG_USB_LOGGING)
+    {
+        ESP_LOGW(TAG, "Failed to send HID report via ESP-NOW: %s", esp_err_to_name(ret));
+    }
 }
 
 void app_main(void)

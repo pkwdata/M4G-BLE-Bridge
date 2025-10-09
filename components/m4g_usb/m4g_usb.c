@@ -11,8 +11,17 @@
 static inline void m4g_bridge_set_charachorder_status(bool detected, bool both_halves) { (void)detected; (void)both_halves; }
 static inline void m4g_bridge_reset_slot(uint8_t slot) { (void)slot; }
 static inline void m4g_bridge_process_usb_report(uint8_t slot, const uint8_t *report, size_t len, bool is_charachorder) {
+    // On RIGHT side, forward reports via ESP-NOW to LEFT
+    #ifdef CONFIG_M4G_SPLIT_ROLE_RIGHT
+    extern esp_err_t m4g_espnow_send_hid_report(uint8_t slot, const uint8_t *report, size_t len, bool is_charachorder);
+    esp_err_t ret = m4g_espnow_send_hid_report(slot, report, len, is_charachorder);
+    if (ret != ESP_OK && ENABLE_DEBUG_USB_LOGGING)
+    {
+        ESP_LOGW("M4G-USB", "Failed to forward HID report via ESP-NOW: %s", esp_err_to_name(ret));
+    }
+    #else
     (void)slot; (void)report; (void)len; (void)is_charachorder;
-    // On RIGHT side, reports should be forwarded via ESP-NOW instead
+    #endif
 }
 #endif
 #include "usb/usb_host.h"
@@ -563,6 +572,15 @@ static void enumerate_device(uint8_t dev_addr)
 static void hid_transfer_callback(usb_transfer_t *transfer)
 {
   m4g_usb_hid_device_t *dev = (m4g_usb_hid_device_t *)transfer->context;
+  
+  // Debug: Log every callback to see if CharaChorder sends anything
+  static uint32_t callback_count = 0;
+  if (++callback_count % 100 == 1) // Log every 100th callback to avoid spam
+  {
+    ESP_LOGI(USB_TAG, "Transfer callback #%lu (status=%d, actual_bytes=%d)", 
+             callback_count, transfer->status, transfer->actual_num_bytes);
+  }
+  
   if (!dev)
     return;
 
@@ -724,11 +742,12 @@ static void hid_transfer_callback(usb_transfer_t *transfer)
     }
     else
     {
+      // Always log HID reports for debugging RIGHT side
+      LOG_AND_SAVE(true, I, USB_TAG,
+                   "HID report dev=%s slot=%d %zu bytes",
+                   dev->device_name, dev->slot, report_len);
       if (ENABLE_DEBUG_KEYPRESS_LOGGING)
       {
-        LOG_AND_SAVE(ENABLE_DEBUG_KEYPRESS_LOGGING, I, USB_TAG,
-                     "HID report dev=%s slot=%d %zu bytes",
-                     dev->device_name, dev->slot, report_len);
         ESP_LOG_BUFFER_HEX_LEVEL(USB_TAG, report_buffer, report_len, ESP_LOG_INFO);
       }
 
