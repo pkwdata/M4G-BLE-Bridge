@@ -211,14 +211,19 @@ void app_main(void)
             m4g_log_flush();
         }
         
-        // Update LED with ESP-NOW connection status
+        // Update LED with all connection statuses (LEFT side needs all three)
+        bool usb_conn = m4g_usb_is_connected();
+        bool ble_conn = m4g_ble_is_connected();
         bool espnow_peer = m4g_espnow_is_peer_connected();
+        
+        m4g_led_set_usb_connected(usb_conn);
+        m4g_led_set_ble_connected(ble_conn);
         m4g_led_set_espnow_connected(espnow_peer);
         
         if (ENABLE_DEBUG_BLE_LOGGING)
         {
             ESP_LOGD(TAG, "HB BLE=%d USB=%d ESP-NOW_peer=%d", 
-                     (int)m4g_ble_is_connected(), (int)m4g_usb_is_connected(), (int)espnow_peer);
+                     (int)ble_conn, (int)usb_conn, (int)espnow_peer);
         }
         
         if (stack_period_ticks > 0 && (xTaskGetTickCount() - last_stack_log) >= stack_period_ticks)

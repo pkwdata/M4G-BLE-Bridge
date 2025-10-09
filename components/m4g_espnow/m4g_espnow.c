@@ -222,6 +222,22 @@ esp_err_t m4g_espnow_init(const m4g_espnow_config_t *config)
     return ret;
   }
 
+  // For RIGHT side, override MAC address BEFORE starting WiFi to avoid conflicts with LEFT
+  #if defined(CONFIG_M4G_SPLIT_ROLE_RIGHT)
+  uint8_t custom_mac[6];
+  esp_read_mac(custom_mac, ESP_MAC_WIFI_STA);
+  custom_mac[5] = (custom_mac[5] + 1) & 0xFF;  // Increment last byte to make unique
+  ret = esp_wifi_set_mac(WIFI_IF_STA, custom_mac);
+  if (ret == ESP_OK)
+  {
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, TAG, "RIGHT: Set custom MAC=" MACSTR " (original +1)", MAC2STR(custom_mac));
+  }
+  else
+  {
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, W, TAG, "Failed to set custom MAC: %s", esp_err_to_name(ret));
+  }
+  #endif
+
   ret = esp_wifi_start();
   if (ret != ESP_OK)
   {
