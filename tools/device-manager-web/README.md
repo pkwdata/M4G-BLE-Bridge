@@ -81,3 +81,4 @@ The build output is emitted to `dist/`. Serve the static assets with any HTTPS-c
 ## License
 
 This tooling follows the main project license (see repository `LICENSE`).
+# Deployment trigger 2025-10-09T10:42:53-05:00
