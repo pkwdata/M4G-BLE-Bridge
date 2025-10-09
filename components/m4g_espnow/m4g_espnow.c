@@ -278,19 +278,22 @@ esp_err_t m4g_espnow_init(const m4g_espnow_config_t *config)
   esp_now_peer_info_t peer = {0};
   peer.channel = config->channel;
   peer.ifidx = WIFI_IF_STA;
-  peer.encrypt = config->use_pmk;
 
   if (config->peer_mac[0] == 0 && config->peer_mac[1] == 0)
   {
-    // Use broadcast
+    // Use broadcast - ESP-NOW does NOT support encryption on broadcast addresses
     memset(peer.peer_addr, 0xFF, 6);
     memcpy(s_peer_mac, peer.peer_addr, 6);
+    peer.encrypt = false;  // Force disable encryption for broadcast
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, TAG, "Using broadcast peer (encryption disabled for broadcast)");
   }
   else
   {
-    // Use specific peer MAC
+    // Use specific peer MAC - encryption can be enabled
     memcpy(peer.peer_addr, config->peer_mac, 6);
     memcpy(s_peer_mac, config->peer_mac, 6);
+    peer.encrypt = config->use_pmk;
+    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, TAG, "Using specific peer MAC (encrypt=%d)", peer.encrypt);
   }
 
   ret = esp_now_add_peer(&peer);

@@ -567,19 +567,3 @@ CONFIG_BT_NIMBLE_ENABLED=y
 CONFIG_M4G_ESPNOW_CHANNEL=1
 CONFIG_M4G_ESPNOW_USE_ENCRYPTION=y
 CONFIG_M4G_ESPNOW_PMK="M4G_SPLIT_KEY!!"
-# Split Keyboard Configuration - RIGHT SIDE
-# This board receives from local USB (right keyboard) and transmits via ESP-NOW to left side
-# No Bluetooth functionality on this board
-
-# Split keyboard role (explicit choice selection)
-# CONFIG_M4G_SPLIT_ROLE_LEFT is not set
-CONFIG_M4G_SPLIT_ROLE_RIGHT=y
-# CONFIG_M4G_SPLIT_ROLE_STANDALONE is not set
-
-# ESP-NOW settings
-CONFIG_M4G_ESPNOW_CHANNEL=1
-CONFIG_M4G_ESPNOW_USE_ENCRYPTION=y
-CONFIG_M4G_ESPNOW_PMK="M4G_SPLIT_KEY!!"
-
-# Disable BLE to save memory (right side doesn't need it)
-CONFIG_BT_ENABLED=n
