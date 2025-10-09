@@ -69,79 +69,79 @@ static void get_base_led_color(uint8_t *r, uint8_t *g, uint8_t *b)
   if (!usb_connected && !espnow_connected && !ble_connected)
   {
     // No connections at all -> RED
-    r = LED_BRIGHTNESS;
-    g = 0;
-    b = 0;
+    *r = LED_BRIGHTNESS;
+    *g = 0;
+    *b = 0;
     LOG_AND_SAVE(ENABLE_DEBUG_LED_LOGGING, I, LED_TAG, "LED: RED (no connections)");
   }
   else if (usb_connected && !espnow_connected && !ble_connected)
   {
     // Local USB only (left keyboard detected) -> MAGENTA
-    r = LED_BRIGHTNESS;
-    g = 0;
-    b = LED_BRIGHTNESS;
+    *r = LED_BRIGHTNESS;
+    *g = 0;
+    *b = LED_BRIGHTNESS;
     LOG_AND_SAVE(ENABLE_DEBUG_LED_LOGGING, I, LED_TAG, "LED: MAGENTA (left USB only)");
   }
   else if (usb_connected && !espnow_connected && ble_connected)
   {
     // Local USB + BLE but no right side -> MAGENTA (keep magenta)
-    r = LED_BRIGHTNESS;
-    g = 0;
-    b = LED_BRIGHTNESS;
+    *r = LED_BRIGHTNESS;
+    *g = 0;
+    *b = LED_BRIGHTNESS;
     LOG_AND_SAVE(ENABLE_DEBUG_LED_LOGGING, I, LED_TAG, "LED: MAGENTA (left USB + BLE, no right)");
   }
   else if (usb_connected && espnow_connected && !ble_connected)
   {
     // Local USB + Right side connected -> GREEN
-    r = 0;
-    g = LED_BRIGHTNESS;
-    b = 0;
+    *r = 0;
+    *g = LED_BRIGHTNESS;
+    *b = 0;
     LOG_AND_SAVE(ENABLE_DEBUG_LED_LOGGING, I, LED_TAG, "LED: GREEN (both halves, no BLE)");
   }
   else if (usb_connected && espnow_connected && ble_connected)
   {
     // All connected (left USB + right + BLE) -> BLUE
-    r = 0;
-    g = 0;
-    b = LED_BRIGHTNESS;
+    *r = 0;
+    *g = 0;
+    *b = LED_BRIGHTNESS;
     LOG_AND_SAVE(ENABLE_DEBUG_LED_LOGGING, I, LED_TAG, "LED: BLUE (full split + BLE)");
   }
   else
   {
     // Fallback for other combinations -> YELLOW
-    r = LED_BRIGHTNESS;
-    g = LED_BRIGHTNESS;
-    b = 0;
+    *r = LED_BRIGHTNESS;
+    *g = LED_BRIGHTNESS;
+    *b = 0;
     LOG_AND_SAVE(ENABLE_DEBUG_LED_LOGGING, W, LED_TAG, "LED: YELLOW (unexpected state)");
   }
 #else
   // STANDALONE or RIGHT side - original logic
   if (!usb_connected && !ble_connected)
   { // None -> RED
-    r = LED_BRIGHTNESS;
-    g = 0;
-    b = 0;
+    *r = LED_BRIGHTNESS;
+    *g = 0;
+    *b = 0;
     LOG_AND_SAVE(ENABLE_DEBUG_LED_LOGGING, I, LED_TAG, "LED: RED (no connections)");
   }
   else if (usb_connected && !ble_connected)
   { // USB only -> GREEN
-    r = 0;
-    g = LED_BRIGHTNESS;
-    b = 0;
+    *r = 0;
+    *g = LED_BRIGHTNESS;
+    *b = 0;
     LOG_AND_SAVE(ENABLE_DEBUG_LED_LOGGING, I, LED_TAG, "LED: GREEN (USB only)");
   }
   else if (!usb_connected && ble_connected)
   { // BLE only -> YELLOW
-    r = LED_BRIGHTNESS;
-    g = LED_BRIGHTNESS;
-    b = 0;
+    *r = LED_BRIGHTNESS;
+    *g = LED_BRIGHTNESS;
+    *b = 0;
     LOG_AND_SAVE(ENABLE_DEBUG_LED_LOGGING, I, LED_TAG, "LED: YELLOW (BLE only)");
   }
   else
   { // Both -> BLUE
-    r = 0;
-    g = 0;
-    b = LED_BRIGHTNESS;
+    *r = 0;
+    *g = 0;
+    *b = LED_BRIGHTNESS;
     LOG_AND_SAVE(ENABLE_DEBUG_LED_LOGGING, I, LED_TAG, "LED: BLUE (USB + BLE)");
   }
 #endif
