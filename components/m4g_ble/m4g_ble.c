@@ -329,9 +329,11 @@ static void start_advertising(void)
   if (rc != 0)
   {
     LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, E, BLE_TAG, "adv start rc=%d", rc);
+    m4g_led_set_ble_advertising(false);  // Failed to start advertising
   }
   else
   {
+    m4g_led_set_ble_advertising(true);  // Successfully started advertising
     LOG_AND_SAVE(ENABLE_DEBUG_BLE_LOGGING, I, BLE_TAG, "Advertising started");
   }
 }

@@ -211,9 +211,12 @@ void app_main(void)
             m4g_log_flush();
         }
         
+        // Update LED with ESP-NOW connection status
+        bool espnow_peer = m4g_espnow_is_peer_connected();
+        m4g_led_set_espnow_connected(espnow_peer);
+        
         if (ENABLE_DEBUG_BLE_LOGGING)
         {
-            bool espnow_peer = m4g_espnow_is_peer_connected();
             ESP_LOGD(TAG, "HB BLE=%d USB=%d ESP-NOW_peer=%d", 
                      (int)m4g_ble_is_connected(), (int)m4g_usb_is_connected(), (int)espnow_peer);
         }

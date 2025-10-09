@@ -389,20 +389,22 @@ config M4G_LED_DATA_GPIO
 	int "LED data GPIO"
 	depends on !M4G_LED_TYPE_NONE
 	default 48 if M4G_BOARD_DEVKIT
-	default 38 if M4G_BOARD_QTPY
+	default 39 if M4G_BOARD_QTPY
 	range 0 48
 	help
 		GPIO output driving the status LED (NeoPixel or single LED).
+		QT Py ESP32-S3 uses GPIO 39 for NeoPixel data.
 
 config M4G_LED_POWER_GPIO
 	int "LED power enable GPIO (-1 to disable)"
 	depends on !M4G_LED_TYPE_NONE
 	default -1 if M4G_BOARD_DEVKIT
-	default -1 if M4G_BOARD_QTPY
+	default 38 if M4G_BOARD_QTPY
 	default -1
 	range -1 48
 	help
 		Optional power/enable pin for LED. Set -1 if not used.
+		QT Py ESP32-S3 requires GPIO 38 HIGH to power the NeoPixel.
 
 config M4G_VBUS_ENABLE_GPIO
 	int "VBUS enable GPIO (-1 if none)"
