@@ -117,8 +117,14 @@ echo "------------------------------------------"
 # Add firmware files to git
 git add "$FIRMWARE_DIR"/*.bin
 
+# Update trigger file to ensure GitHub Actions workflow runs
+# (Binary files sometimes don't trigger workflows reliably)
+TRIGGER_FILE="tools/device-manager-web/.trigger-deploy"
+echo "Deployment triggered: $(date -Iseconds)" > "$TRIGGER_FILE"
+git add "$TRIGGER_FILE"
+
 # Check if there are changes to commit
-if git diff --cached --quiet HEAD -- "$FIRMWARE_DIR"; then
+if git diff --cached --quiet HEAD -- "$FIRMWARE_DIR" "$TRIGGER_FILE"; then
     echo "ℹ️  No firmware changes detected - files are already up to date"
     NEED_COMMIT=false
 else
