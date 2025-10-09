@@ -14,9 +14,10 @@ if("__idf_platform" IN_LIST component_targets)
 endif()
 
 # Determine firmware variant name based on split keyboard role configuration
-if(CONFIG_M4G_SPLIT_ROLE_LEFT)
+# Check if config is defined to avoid defaults on first CMake run
+if(DEFINED CONFIG_M4G_SPLIT_ROLE_LEFT AND CONFIG_M4G_SPLIT_ROLE_LEFT)
     set(FIRMWARE_VARIANT "LEFT")
-elseif(CONFIG_M4G_SPLIT_ROLE_RIGHT)
+elseif(DEFINED CONFIG_M4G_SPLIT_ROLE_RIGHT AND CONFIG_M4G_SPLIT_ROLE_RIGHT)
     set(FIRMWARE_VARIANT "RIGHT")
 else()
     set(FIRMWARE_VARIANT "STANDALONE")

@@ -8,10 +8,16 @@
 
 #include "m4g_platform.h"
 #include "m4g_usb.h"
+#ifndef CONFIG_M4G_SPLIT_ROLE_RIGHT
 #include "m4g_ble.h"
+#include "m4g_bridge.h"
+#else
+// RIGHT side stubs - these functions are not available without bridge/ble
+static inline esp_err_t m4g_ble_init(void) { return ESP_OK; }
+static inline esp_err_t m4g_bridge_init(void) { return ESP_OK; }
+#endif
 #include "m4g_led.h"
 #include "m4g_logging.h"
-#include "m4g_bridge.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "sdkconfig.h"

@@ -11,20 +11,29 @@ echo "Building STANDALONE Firmware"
 echo "======================================"
 echo ""
 
-# Use default sdkconfig (no split keyboard options)
-# The default configuration is already standalone mode
+# Remove old sdkconfig to force fresh configuration
 rm -f sdkconfig sdkconfig.old
 
-# Ensure we're using clean defaults (standalone doesn't need special config)
-if [ -f sdkconfig.defaults.orig ]; then
-    cp sdkconfig.defaults.orig sdkconfig.defaults
+# Backup original defaults and create combined file
+if [ ! -f sdkconfig.defaults.orig ]; then
+    cp sdkconfig.defaults sdkconfig.defaults.orig
 fi
 
-# Set target (will create build directory)
+# Create temporary combined defaults file
+cat sdkconfig.defaults.orig sdkconfig.defaults.standalone > sdkconfig.defaults.tmp
+mv sdkconfig.defaults.tmp sdkconfig.defaults
+
+# Set target (will create build directory and load defaults)
 idf.py -B "$BUILD_DIR" set-target esp32s3
+
+# Reconfigure to pick up the split keyboard role settings
+idf.py -B "$BUILD_DIR" reconfigure
 
 # Build
 idf.py -B "$BUILD_DIR" build
+
+# Restore original defaults
+mv sdkconfig.defaults.orig sdkconfig.defaults
 
 echo ""
 echo "======================================"

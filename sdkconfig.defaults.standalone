@@ -1,0 +1,14 @@
+# Standalone Keyboard Configuration
+# This is the original single keyboard mode (no split keyboard features)
+# Connects to one keyboard via USB and transmits to computer via Bluetooth
+
+# Split keyboard role (explicit choice selection)
+# CONFIG_M4G_SPLIT_ROLE_LEFT is not set
+# CONFIG_M4G_SPLIT_ROLE_RIGHT is not set
+CONFIG_M4G_SPLIT_ROLE_STANDALONE=y
+
+# Bluetooth MUST be enabled for STANDALONE (transmits to computer)
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+
+# ESP-NOW not used in standalone mode (optional - will be compiled but unused)
