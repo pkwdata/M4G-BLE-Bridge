@@ -26,7 +26,6 @@ static void usb_report_callback(const uint8_t *data, size_t len)
     }
 
     // Check report type and forward to LEFT via ESP-NOW
-    uint8_t report_id = data[0];
     bool is_charachorder = (len >= 2 && data[1] != 0); // Heuristic: CharaChorder reports have data
     
     esp_err_t ret = m4g_espnow_send_hid_report(0, data, len, is_charachorder);
@@ -104,6 +103,7 @@ void app_main(void)
     vTaskDelay(pdMS_TO_TICKS(200));
     m4g_diag_run_startup_checks();
 
+
     // Main loop - monitor status and update LED
     for (;;)
     {
@@ -136,6 +136,7 @@ void app_main(void)
                          stats.packets_sent, stats.packets_received, stats.send_failures,
                          stats.packets_lost, stats.last_rssi);
         }
+
 
         // Flush logs
         if (m4g_log_persistence_enabled())

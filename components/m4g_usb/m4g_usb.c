@@ -14,10 +14,18 @@ static inline void m4g_bridge_process_usb_report(uint8_t slot, const uint8_t *re
     // On RIGHT side, forward reports via ESP-NOW to LEFT
     #ifdef CONFIG_M4G_SPLIT_ROLE_RIGHT
     extern esp_err_t m4g_espnow_send_hid_report(uint8_t slot, const uint8_t *report, size_t len, bool is_charachorder);
+    
+    // Log every USB report received
+    ESP_LOGI("M4G-USB", "RIGHT: USB report received slot=%d len=%zu, forwarding via ESP-NOW", slot, len);
+    
     esp_err_t ret = m4g_espnow_send_hid_report(slot, report, len, is_charachorder);
-    if (ret != ESP_OK && ENABLE_DEBUG_USB_LOGGING)
+    if (ret != ESP_OK)
     {
         ESP_LOGW("M4G-USB", "Failed to forward HID report via ESP-NOW: %s", esp_err_to_name(ret));
+    }
+    else
+    {
+        ESP_LOGI("M4G-USB", "Successfully forwarded HID report via ESP-NOW");
     }
     #else
     (void)slot; (void)report; (void)len; (void)is_charachorder;
@@ -358,13 +366,13 @@ static void usb_host_client_event_cb(const usb_host_client_event_msg_t *event_ms
 
 static void enumerate_device(uint8_t dev_addr)
 {
-  LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "Enumerating addr %d (claimed=%d)", dev_addr, s_claimed_device_count);
+  LOG_AND_SAVE(true, I, USB_TAG, "=== Enumerating device addr=%d (total_claimed=%d) ===", dev_addr, s_claimed_device_count);
   vTaskDelay(pdMS_TO_TICKS(50));
   usb_device_handle_t dev_hdl;
   esp_err_t err = usb_host_device_open(s_client, dev_addr, &dev_hdl);
   if (err != ESP_OK)
   {
-    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, E, USB_TAG, "open fail: %s", esp_err_to_name(err));
+    LOG_AND_SAVE(true, E, USB_TAG, "Device open failed: %s", esp_err_to_name(err));
     return;
   }
   const usb_device_desc_t *dev_desc;
@@ -374,25 +382,25 @@ static void enumerate_device(uint8_t dev_addr)
     return;
   }
 
+  // Log full device descriptor for protocol analysis
+  LOG_AND_SAVE(true, I, USB_TAG, "Device Descriptor: VID=0x%04X PID=0x%04X Class=0x%02X SubClass=0x%02X Protocol=0x%02X Configs=%d",
+               dev_desc->idVendor, dev_desc->idProduct, dev_desc->bDeviceClass,
+               dev_desc->bDeviceSubClass, dev_desc->bDeviceProtocol, dev_desc->bNumConfigurations);
+
   // Check if this is a CharaChorder device
   bool is_chara_dev = (dev_desc->idVendor == CONFIG_M4G_USB_CHARACHORDER_VENDOR_ID &&
                        dev_desc->idProduct == CONFIG_M4G_USB_CHARACHORDER_PRODUCT_ID);
 
   // If we already have a CharaChorder device claimed, this is the second half
+  // FOR PROTOCOL ANALYSIS: Claim BOTH halves to see their data streams
   if (s_charachorder_mode && s_charachorder_halves_connected > 0 && is_chara_dev)
   {
     ++s_charachorder_halves_detected;
-    LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG,
-                 "Second CharaChorder half detected at addr %d (both halves now present - total detected: %d)",
-                 dev_addr, s_charachorder_halves_detected);
-    usb_host_device_close(s_client, dev_hdl);
-
-    // Verify both halves are present
-    if (s_charachorder_halves_detected >= 2)
-    {
-      LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "Both CharaChorder halves successfully connected");
-    }
-    return;
+    LOG_AND_SAVE(true, I, USB_TAG,
+                 "⚠️  SECOND CharaChorder half detected at addr=%d (VID=0x%04X PID=0x%04X) - WILL CLAIM IT",
+                 dev_addr, dev_desc->idVendor, dev_desc->idProduct);
+    LOG_AND_SAVE(true, I, USB_TAG, "Protocol analysis mode: claiming both halves to capture all data");
+    // Don't return - continue to claim this device too
   }
 
   if (dev_desc->bDeviceClass == 0x09)
@@ -522,7 +530,31 @@ static void enumerate_device(uint8_t dev_addr)
             LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "First CharaChorder half connected, waiting for second half...");
           }
 
-          snprintf(dev->device_name, sizeof(dev->device_name), "CharaChorder_%u", (unsigned)s_charachorder_halves_connected);
+          snprintf(dev->device_name, sizeof(dev->device_name), "CharaChorder_Half%u_Addr%d", (unsigned)s_charachorder_halves_connected, dev_addr);
+          LOG_AND_SAVE(true, I, USB_TAG, "✓ Claimed CharaChorder half #%d (device addr=%d, interface=%d, endpoint=0x%02X)",
+                       s_charachorder_halves_connected, dev_addr, intf_desc->bInterfaceNumber, dev->ep_addr);
+          
+          // Try to read HID Report Descriptor to understand the device
+          const uint8_t *p = (const uint8_t *)intf_desc;
+          p += intf_desc->bLength;
+          int bytes_left = cfg->wTotalLength - ((const uint8_t *)intf_desc - (const uint8_t *)cfg);
+          
+          // Look for HID descriptor (type 0x21)
+          while (bytes_left > 0) {
+            const usb_standard_desc_t *desc = (const usb_standard_desc_t *)p;
+            if (desc->bLength == 0) break;
+            if (desc->bDescriptorType == 0x21) {  // HID descriptor
+              LOG_AND_SAVE(true, I, USB_TAG, "Found HID descriptor, length=%d", desc->bLength);
+              ESP_LOG_BUFFER_HEX_LEVEL(USB_TAG, p, desc->bLength, ESP_LOG_INFO);
+              break;
+            }
+            bytes_left -= desc->bLength;
+            p += desc->bLength;
+            if (desc->bDescriptorType == USB_B_DESCRIPTOR_TYPE_INTERFACE || 
+                desc->bDescriptorType == USB_B_DESCRIPTOR_TYPE_ENDPOINT) {
+              break;  // Moved to next interface/endpoint
+            }
+          }
         }
         else
         {
@@ -532,7 +564,7 @@ static void enumerate_device(uint8_t dev_addr)
         ++s_claimed_device_count;
         ++hid_claims_on_device;
         m4g_bridge_reset_slot(dev->slot);
-        LOG_AND_SAVE(ENABLE_DEBUG_USB_LOGGING, I, USB_TAG, "Stored HID slot=%d addr=%d VID=0x%04X PID=0x%04X ep=0x%02X intf=%d active=%d claims_on_dev=%d",
+        LOG_AND_SAVE(true, I, USB_TAG, "Stored HID slot=%d addr=%d VID=0x%04X PID=0x%04X ep=0x%02X intf=%d active=%d claims_on_dev=%d",
                      slot, dev_addr, dev->vid, dev->pid, dev->ep_addr, intf_desc->bInterfaceNumber, s_active_hid_devices, hid_claims_on_device);
         if (!dev->ep_addr)
         {
@@ -600,7 +632,17 @@ static void hid_transfer_callback(usb_transfer_t *transfer)
     if (report_len > 0 && report_len <= sizeof(report_buffer))
     {
       memcpy(report_buffer, transfer->data_buffer, report_len);
-      process_report = true;
+      
+      // Only log/process interrupt endpoint data (0x83), not control transfers (0x00)
+      if (transfer->bEndpointAddress != 0)
+      {
+        process_report = true;
+        
+        // ALWAYS log raw USB data for protocol analysis
+        LOG_AND_SAVE(true, I, USB_TAG, "RAW USB RX: ep=0x%02X len=%zu", 
+                     transfer->bEndpointAddress, report_len);
+        ESP_LOG_BUFFER_HEX_LEVEL(USB_TAG, report_buffer, report_len, ESP_LOG_INFO);
+      }
 
       // Check for malformed CharaChorder reports
       if (dev->is_charachorder && report_len > 15 &&
@@ -781,6 +823,8 @@ static void setup_hid_transfers(void)
     t->context = dev;
     t->num_bytes = 64;
 
+    // Don't send SET_PROTOCOL - CharaChorder uses Report Protocol by default
+
     esp_err_t err = usb_host_transfer_submit(t);
     if (err != ESP_OK)
     {
@@ -798,6 +842,49 @@ static void setup_hid_transfers(void)
     {
       dev->transfer_started = true;
       dev->transfer = t;
+      LOG_AND_SAVE(true, I, USB_TAG, 
+                  "INT transfer started for dev=%s ep=0x%02X", 
+                  dev->device_name, dev->ep_addr);
+      
+      // CharaChorder has an OUT endpoint (0x04) - try sending wake-up/activation commands
+      if (dev->is_charachorder)
+      {
+        LOG_AND_SAVE(true, W, USB_TAG, 
+                    "⚠️  CharaChorder detected but not sending data - trying activation commands...");
+        
+        // Try SET_IDLE to wake up the device
+        usb_transfer_t *ctrl_transfer;
+        if (usb_host_transfer_alloc(64, 0, &ctrl_transfer) == ESP_OK)
+        {
+          usb_setup_packet_t *setup = (usb_setup_packet_t *)ctrl_transfer->data_buffer;
+          setup->bmRequestType = 0x21; // Host-to-Device, Class, Interface
+          setup->bRequest = 0x0A;       // SET_IDLE
+          setup->wValue = 0;            // Duration = 0 (report every change)
+          setup->wIndex = dev->intf_num;
+          setup->wLength = 0;
+          
+          ctrl_transfer->device_handle = dev->dev_hdl;
+          ctrl_transfer->bEndpointAddress = 0;
+          ctrl_transfer->callback = hid_transfer_callback;
+          ctrl_transfer->context = dev;
+          ctrl_transfer->num_bytes = 8;
+          ctrl_transfer->timeout_ms = 1000;
+          
+          esp_err_t err = usb_host_transfer_submit_control(s_client, ctrl_transfer);
+          LOG_AND_SAVE(true, I, USB_TAG, "Sent SET_IDLE: %s", esp_err_to_name(err));
+          
+          if (err != ESP_OK) {
+            usb_host_transfer_free(ctrl_transfer);
+          }
+        }
+        
+        // Also try sending a dummy report to the OUT endpoint to see if that activates it
+        // Some devices need host to send data first
+        LOG_AND_SAVE(true, I, USB_TAG, 
+                    "CharaChorder appears inactive. This may be expected behavior.");
+        LOG_AND_SAVE(true, I, USB_TAG, 
+                    "To reverse engineer: 1) Use Wireshark with usbmon on Linux, 2) Capture working session, 3) Compare with this");
+      }
     }
   }
   update_required_hid_devices();

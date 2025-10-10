@@ -14,3 +14,21 @@ CONFIG_M4G_ESPNOW_PMK="M4G_SPLIT_KEY!!"
 
 # Disable BLE to save memory (right side doesn't need it)
 CONFIG_BT_ENABLED=n
+
+# Use GPIO UART for console output (for FTDI debugging)
+# NOTE: UART pins are board-specific. Adjust for your hardware:
+#   - QT Py ESP32-S3: TX=GPIO17, RX=GPIO18
+#   - DevKit-1: TX=GPIO43, RX=GPIO44 (standard UART0)
+CONFIG_ESP_CONSOLE_UART=y
+# CONFIG_ESP_CONSOLE_USB_CDC is not set
+# CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG is not set
+CONFIG_ESP_CONSOLE_UART_NUM=0
+CONFIG_ESP_CONSOLE_UART_TX_GPIO=43
+CONFIG_ESP_CONSOLE_UART_RX_GPIO=44
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# LED auto-detection is enabled by default
+# The firmware will automatically detect:
+#   - QT Py: GPIO39 (data) + GPIO38 (power)
+#   - DevKit-1: GPIO48 (data only)
