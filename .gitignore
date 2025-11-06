@@ -63,5 +63,10 @@ debug
 .defaults
 .old
 
+<<<<<<< HEAD
  # Allow
 !build/M4G_BLE_BRIDGE_MERGED.bin
+=======
+#classified
+classified/
+>>>>>>> 4cd39e8 (Update .gitignore and add complete PCB schematic documentation)
